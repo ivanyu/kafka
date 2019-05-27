@@ -756,6 +756,13 @@ class KafkaConfigTest {
         case KafkaConfig.KafkaMetricsReporterClassesProp => // ignore
         case KafkaConfig.KafkaMetricsPollingIntervalSecondsProp => //ignore
 
+        //remote log storage manager config
+        case KafkaConfig.RemoteLogStorageManagerProp => // ignore string
+        case KafkaConfig.RemoteLogStorageEnableProp => assertPropertyInvalid(getBaseProperties(), name, "not_a_boolean", "0")
+        case KafkaConfig.RemoteLogRetentionBytesProp => assertPropertyInvalid(getBaseProperties(), name, "not_a_number")
+        case KafkaConfig.RemoteLogRetentionMillisProp=> assertPropertyInvalid(getBaseProperties(), name, "not_a_number")
+        case KafkaConfig.RemoteLogRetentionMinutesProp => assertPropertyInvalid(getBaseProperties(), name, "not_a_number")
+
         case _ => assertPropertyInvalid(getBaseProperties(), name, "not_a_number", "-1")
       }
     })
@@ -834,7 +841,7 @@ class KafkaConfigTest {
       val props = validRequiredProps
       props.setProperty(name, value.toString)
       intercept[Exception] {
-        KafkaConfig.fromProps(props)
+        KafkaConfig.fromProps(props, doLog = true)
       }
     })
   }
