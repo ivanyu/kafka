@@ -197,7 +197,7 @@ class SocketServerTest extends JUnitSuite {
     testProps.put("control.plane.listener.name", "CONTROLLER")
     val config = KafkaConfig.fromProps(testProps)
     withTestableServer(config, { testableServer =>
-      val socket = connect(testableServer, config.controlPlaneListenerName.get, localAddr = InetAddress.getLocalHost, port = 5000)
+      val socket = connect(testableServer, config.controlPlaneListenerName.get, localAddr = InetAddress.getLocalHost, port = 5007)
       sendAndReceiveControllerRequest(socket, testableServer)
     })
   }

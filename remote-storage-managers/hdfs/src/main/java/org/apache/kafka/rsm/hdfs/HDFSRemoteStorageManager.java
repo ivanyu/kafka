@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.rsm.hdfs;
 
-import kafka.log.LogReadInfo;
 import kafka.log.LogSegment;
 import kafka.log.remote.RDI;
 import kafka.log.remote.RemoteLogIndexEntry;
@@ -69,7 +68,12 @@ public class HDFSRemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public void close() {
-
+        if (fs != null) {
+            try {
+                fs.close();
+            } catch (IOException e) {
+            }
+        }
     }
 
     /**
@@ -83,8 +87,7 @@ public class HDFSRemoteStorageManager implements RemoteStorageManager {
         hadoopConf = new Configuration(); // Load configuration from hadoop configuration files in class path
         try {
             fs = FileSystem.get(baseURI, hadoopConf);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             // TODO:
         }
     }
