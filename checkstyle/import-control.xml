@@ -425,4 +425,19 @@
     </subpackage>
   </subpackage>
 
+  <subpackage name="rsm">
+    <allow pkg="org.apache.kafka.common" />
+    <allow pkg="org.apache.kafka.clients"/>
+    <allow pkg="kafka.common" />
+    <allow pkg="kafka.server" />
+    <allow pkg="kafka.tools" />
+    <allow pkg="kafka.utils" />
+    <allow pkg="kafka.log" />
+    <allow pkg="scala" />
+
+    <subpackage name="hdfs">
+      <allow pkg="org.apache.hadoop" />
+    </subpackage>
+  </subpackage>
+
 </import-control>
