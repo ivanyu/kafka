@@ -537,5 +537,4 @@ class LogSegmentTest {
 
     Utils.delete(tempDir)
   }
-
 }
