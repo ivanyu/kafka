@@ -289,8 +289,8 @@ class Partition(val topicPartition: TopicPartition,
       None
   }
 
-  private def localReplicaWithEpochOrException(currentLeaderEpoch: Optional[Integer],
-                                               requireLeader: Boolean): Replica = {
+  def localReplicaWithEpochOrException(currentLeaderEpoch: Optional[Integer],
+                                       requireLeader: Boolean): Replica = {
     getLocalReplica(localBrokerId, currentLeaderEpoch, requireLeader) match {
       case Left(replica) => replica
       case Right(error) =>

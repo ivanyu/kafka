@@ -77,6 +77,8 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
             "Last committed offset.");
     private static final Field.Int64 LOG_START_OFFSET = new Field.Int64("log_start_offset",
             "Earliest available offset.");
+    private static final Field.Int64 NEXT_LOCAL_OFFSET = new Field.Int64("next_local_offset",
+            "Next local offset available on leader when tiered storage is enabled for a topic.");
 
     private static final String PARTITION_HEADER_KEY_NAME = "partition_header";
     private static final String ABORTED_TRANSACTIONS_KEY_NAME = "aborted_transactions";
@@ -139,12 +141,27 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
             LOG_START_OFFSET,
             new Field(ABORTED_TRANSACTIONS_KEY_NAME, ArrayOf.nullable(FETCH_RESPONSE_ABORTED_TRANSACTION_V4)));
 
+    // V6 added next_local_offset - the offset available locally, beyond which data is pushed to remote tier.
+    // followers can fetch to this offset as
+    private static final Schema FETCH_RESPONSE_PARTITION_HEADER_V6 = new Schema(
+            PARTITION_ID,
+            ERROR_CODE,
+            HIGH_WATERMARK,
+            LAST_STABLE_OFFSET,
+            LOG_START_OFFSET,
+            NEXT_LOCAL_OFFSET,
+            new Field(ABORTED_TRANSACTIONS_KEY_NAME, ArrayOf.nullable(FETCH_RESPONSE_ABORTED_TRANSACTION_V4)));
+
     private static final Schema FETCH_RESPONSE_PARTITION_V4 = new Schema(
             new Field(PARTITION_HEADER_KEY_NAME, FETCH_RESPONSE_PARTITION_HEADER_V4),
             new Field(RECORD_SET_KEY_NAME, RECORDS));
 
     private static final Schema FETCH_RESPONSE_PARTITION_V5 = new Schema(
             new Field(PARTITION_HEADER_KEY_NAME, FETCH_RESPONSE_PARTITION_HEADER_V5),
+            new Field(RECORD_SET_KEY_NAME, RECORDS));
+
+    private static final Schema FETCH_RESPONSE_PARTITION_V6 = new Schema(
+            new Field(PARTITION_HEADER_KEY_NAME, FETCH_RESPONSE_PARTITION_HEADER_V6),
             new Field(RECORD_SET_KEY_NAME, RECORDS));
 
     private static final Schema FETCH_RESPONSE_TOPIC_V4 = new Schema(
@@ -154,6 +171,10 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
     private static final Schema FETCH_RESPONSE_TOPIC_V5 = new Schema(
             TOPIC_NAME,
             new Field(PARTITIONS_KEY_NAME, new ArrayOf(FETCH_RESPONSE_PARTITION_V5)));
+
+    private static final Schema FETCH_RESPONSE_TOPIC_V6 = new Schema(
+            TOPIC_NAME,
+            new Field(PARTITIONS_KEY_NAME, new ArrayOf(FETCH_RESPONSE_PARTITION_V6)));
 
     private static final Schema FETCH_RESPONSE_V4 = new Schema(
             THROTTLE_TIME_MS,
@@ -185,6 +206,13 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
     // V10 bumped up to indicate ZStandard capability. (see KIP-110)
     private static final Schema FETCH_RESPONSE_V10 = FETCH_RESPONSE_V9;
 
+    // V11 adds next_local_offset
+    private static final Schema FETCH_RESPONSE_V11 = new Schema(
+            THROTTLE_TIME_MS,
+            ERROR_CODE,
+            SESSION_ID,
+            new Field(RESPONSES_KEY_NAME, new ArrayOf(FETCH_RESPONSE_TOPIC_V6)));
+
     public static Schema[] schemaVersions() {
         return new Schema[] {FETCH_RESPONSE_V0, FETCH_RESPONSE_V1, FETCH_RESPONSE_V2,
             FETCH_RESPONSE_V3, FETCH_RESPONSE_V4, FETCH_RESPONSE_V5, FETCH_RESPONSE_V6,
@@ -194,6 +222,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
     public static final long INVALID_HIGHWATERMARK = -1L;
     public static final long INVALID_LAST_STABLE_OFFSET = -1L;
     public static final long INVALID_LOG_START_OFFSET = -1L;
+    public static final long INVALID_NEXT_LOCAL_OFFSET = -1L;
 
     private final int throttleTimeMs;
     private final Errors error;
@@ -241,6 +270,23 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
         public final long logStartOffset;
         public final List<AbortedTransaction> abortedTransactions;
         public final T records;
+        public final long nextLocalOffset;
+
+        public PartitionData(Errors error,
+                             long highWatermark,
+                             long lastStableOffset,
+                             long logStartOffset,
+                             List<AbortedTransaction> abortedTransactions,
+                             T records,
+                             long nextLocalOffset) {
+            this.error = error;
+            this.highWatermark = highWatermark;
+            this.lastStableOffset = lastStableOffset;
+            this.logStartOffset = logStartOffset;
+            this.abortedTransactions = abortedTransactions;
+            this.records = records;
+            this.nextLocalOffset = nextLocalOffset;
+        }
 
         public PartitionData(Errors error,
                              long highWatermark,
@@ -248,12 +294,11 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                              long logStartOffset,
                              List<AbortedTransaction> abortedTransactions,
                              T records) {
-            this.error = error;
-            this.highWatermark = highWatermark;
-            this.lastStableOffset = lastStableOffset;
-            this.logStartOffset = logStartOffset;
-            this.abortedTransactions = abortedTransactions;
-            this.records = records;
+            this(error, highWatermark, lastStableOffset, logStartOffset, abortedTransactions, records, INVALID_NEXT_LOCAL_OFFSET);
+        }
+
+        public boolean isValidNextLocalOffset() {
+            return nextLocalOffset != INVALID_NEXT_LOCAL_OFFSET;
         }
 
         @Override
@@ -269,6 +314,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                     highWatermark == that.highWatermark &&
                     lastStableOffset == that.lastStableOffset &&
                     logStartOffset == that.logStartOffset &&
+                    nextLocalOffset == that.nextLocalOffset &&
                     (abortedTransactions == null ? that.abortedTransactions == null : abortedTransactions.equals(that.abortedTransactions)) &&
                     (records == null ? that.records == null : records.equals(that.records));
         }
@@ -279,6 +325,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
             result = 31 * result + (int) (highWatermark ^ (highWatermark >>> 32));
             result = 31 * result + (int) (lastStableOffset ^ (lastStableOffset >>> 32));
             result = 31 * result + (int) (logStartOffset ^ (logStartOffset >>> 32));
+            result = 31 * result + (int) (nextLocalOffset ^ (nextLocalOffset >>> 32));
             result = 31 * result + (abortedTransactions != null ? abortedTransactions.hashCode() : 0);
             result = 31 * result + (records != null ? records.hashCode() : 0);
             return result;
@@ -290,6 +337,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                     ", highWaterMark=" + highWatermark +
                     ", lastStableOffset = " + lastStableOffset +
                     ", logStartOffset = " + logStartOffset +
+                    ", nextLocalOffset = " + nextLocalOffset +
                     ", abortedTransactions = " + abortedTransactions +
                     ", recordsSizeInBytes=" + records.sizeInBytes() + ")";
         }
@@ -328,6 +376,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                 long highWatermark = partitionResponseHeader.get(HIGH_WATERMARK);
                 long lastStableOffset = partitionResponseHeader.getOrElse(LAST_STABLE_OFFSET, INVALID_LAST_STABLE_OFFSET);
                 long logStartOffset = partitionResponseHeader.getOrElse(LOG_START_OFFSET, INVALID_LOG_START_OFFSET);
+                long nextLocalOffset = partitionResponseHeader.getOrElse(NEXT_LOCAL_OFFSET, INVALID_NEXT_LOCAL_OFFSET);
 
                 BaseRecords baseRecords = partitionResponse.getRecords(RECORD_SET_KEY_NAME);
                 if (!(baseRecords instanceof MemoryRecords))
@@ -349,7 +398,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                 }
 
                 PartitionData<MemoryRecords> partitionData = new PartitionData<>(error, highWatermark, lastStableOffset,
-                        logStartOffset, abortedTransactions, records);
+                        logStartOffset, abortedTransactions, records, nextLocalOffset);
                 responseData.put(new TopicPartition(topic, partition), partitionData);
             }
         }
@@ -512,6 +561,7 @@ public class FetchResponse<T extends BaseRecords> extends AbstractResponse {
                     }
                 }
                 partitionDataHeader.setIfExists(LOG_START_OFFSET, fetchPartitionData.logStartOffset);
+                partitionDataHeader.setIfExists(NEXT_LOCAL_OFFSET, fetchPartitionData.nextLocalOffset);
                 partitionData.set(PARTITION_HEADER_KEY_NAME, partitionDataHeader);
                 partitionData.set(RECORD_SET_KEY_NAME, fetchPartitionData.records);
                 partitionArray.add(partitionData);
