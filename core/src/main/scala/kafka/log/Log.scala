@@ -1930,7 +1930,7 @@ class Log(@volatile var dir: File,
    *
    * @param segment The log segment to schedule for deletion
    */
-  private def deleteSegment(segment: LogSegment) {
+  def deleteSegment(segment: LogSegment) {
     info(s"Scheduling log segment [baseOffset ${segment.baseOffset}, size ${segment.size}] for deletion.")
     lock synchronized {
       segments.remove(segment.baseOffset)
