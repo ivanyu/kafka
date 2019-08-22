@@ -23,23 +23,25 @@ import java.util.concurrent._
 import java.util.function.BiConsumer
 
 import kafka.log.{Log, LogSegment}
-import kafka.server.{Defaults, FetchDataInfo, KafkaConfig, LogOffsetMetadata}
+import kafka.server.{Defaults, FetchDataInfo, KafkaConfig, LogOffsetMetadata, RemoteStorageFetchInfo}
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
-import org.apache.kafka.common.utils.Utils
+import org.apache.kafka.common.utils.{Time, Utils}
 
 import scala.collection.JavaConverters._
 import scala.collection.{JavaConverters, Set}
 
 class RemoteLogManager(logFetcher: TopicPartition => Option[Log],
                        segmentCleaner: (TopicPartition, LogSegment) => Unit,
-                       rlmConfig: RemoteLogManagerConfig) extends Logging with Closeable {
+                       rlmConfig: RemoteLogManagerConfig,
+                       time: Time) extends Logging with Closeable {
 
   private val watchedSegments: BlockingQueue[LogSegmentEntry] = new LinkedBlockingQueue[LogSegmentEntry]()
   private val polledDirs = new ConcurrentHashMap[TopicPartition, Path]().asScala
   private val maxOffsets: util.Map[TopicPartition, Long] = new ConcurrentHashMap[TopicPartition, Long]()
+  private val remoteStorageFetcherThreadPool = new RemoteStorageReaderThreadPool(rlmConfig.remoteLogReaderThreads, rlmConfig.remoteLogReaderMaxPendingTasks, time)
 
   private def createRemoteStorageManager(): RemoteStorageManager = {
     val rsm = Class.forName(rlmConfig.remoteLogStorageManagerClass)
@@ -213,6 +215,18 @@ class RemoteLogManager(logFetcher: TopicPartition => Option[Log],
   }
 
   /**
+   * Submit a remote log read task.
+   *
+   * This method returns immediately. The read operation is executed in a thread pool.
+   * The callback will be called when the task is done.
+   *
+   * @throws RejectedExecutionException if the task cannot be accepted for execution (task queue is full)
+   */
+  def asyncRead(fetchInfo: RemoteStorageFetchInfo, callback: (RemoteLogReadResult) => Unit): Future[Unit] = {
+    remoteStorageFetcherThreadPool.submit(new RemoteLogReader(fetchInfo, this, callback))
+  }
+
+  /**
    * Stops all the threads and releases all the resources.
    */
   def close(): Unit = {
@@ -227,6 +241,8 @@ case class RemoteLogManagerConfig(remoteLogStorageEnable: Boolean,
                                   remoteLogStorageManagerClass: String,
                                   remoteLogRetentionBytes: Long,
                                   remoteLogRetentionMillis: Long,
+                                  remoteLogReaderThreads: Int,
+                                  remoteLogReaderMaxPendingTasks: Int,
                                   remoteStorageConfig: scala.collection.immutable.Map[String, Any])
 
 private case class LogSegmentEntry(topicPartition: TopicPartition,
@@ -248,7 +264,7 @@ private case class LogSegmentEntry(topicPartition: TopicPartition,
 object RemoteLogManager {
   def REMOTE_STORAGE_MANAGER_CONFIG_PREFIX = "remote.log.storage."
   def DefaultConfig = RemoteLogManagerConfig(remoteLogStorageEnable = Defaults.RemoteLogStorageEnable, null,
-    Defaults.RemoteLogRetentionBytes, TimeUnit.MINUTES.toMillis(Defaults.RemoteLogRetentionMinutes), Map.empty)
+    Defaults.RemoteLogRetentionBytes, TimeUnit.MINUTES.toMillis(Defaults.RemoteLogRetentionMinutes), 5, 100, Map.empty)
 
   def createRemoteLogManagerConfig(config: KafkaConfig): RemoteLogManagerConfig = {
     var rsmProps = collection.mutable.Map[String, Any]()
@@ -262,6 +278,6 @@ object RemoteLogManager {
       }
     })
     RemoteLogManagerConfig(config.remoteLogStorageEnable, config.remoteLogStorageManager,
-      config.remoteLogRetentionBytes, config.remoteLogRetentionMillis, rsmProps.toMap)
+      config.remoteLogRetentionBytes, config.remoteLogRetentionMillis, config.remoteLogReaderThreads, config.remoteLogReaderMaxPendingTasks, rsmProps.toMap)
   }
 }

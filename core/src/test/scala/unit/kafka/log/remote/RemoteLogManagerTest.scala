@@ -48,8 +48,8 @@ class RemoteLogManagerTest {
 
   val rsmConfig: Map[String, Any] = Map(REMOTE_STORAGE_MANAGER_CONFIG_PREFIX + "url" -> "foo.url",
     REMOTE_STORAGE_MANAGER_CONFIG_PREFIX + "timout.ms" -> 1000L)
-  val rlmConfig = RemoteLogManagerConfig(remoteLogStorageEnable = true, "kafka.log.remote.MockRemoteStorageManager",
-    1024, 60000, rsmConfig)
+  val rlmConfig = RemoteLogManagerConfig(true, "kafka.log.remote.MockRemoteStorageManager",
+    1024, 60000, 2, 10, rsmConfig)
 
   var logConfig: LogConfig = _
   var tmpDir: File = _

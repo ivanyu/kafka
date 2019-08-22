@@ -123,6 +123,8 @@ object Defaults {
   val RemoteStorageManager = ""
   val RemoteLogRetentionMinutes = 7 * 24 * 60L
   val RemoteLogRetentionBytes = 1024 * 1024 * 1024L
+  val RemoteLogReaderThreads = 5
+  val RemoteLogReaderMaxPendingTasks = 100
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMs = RequestTimeoutMs
@@ -358,6 +360,8 @@ object KafkaConfig {
   val RemoteLogRetentionMillisProp = "remote.log.retention.ms"
   val RemoteLogRetentionMinutesProp = "remote.log.retention.minutes"
   val RemoteLogRetentionBytesProp = "remote.log.retention.bytes"
+  val RemoteLogReaderThreadsProp = "remote.log.reader.threads"
+  val RemoteLogReaderMaxPendingTasksProp = "remote.log.reader.max.pending.tasks"
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMsProp = "controller.socket.timeout.ms"
@@ -670,6 +674,8 @@ object KafkaConfig {
   val RemoteLogRetentionMillisDoc = "Remote log retention in milli seconds, after which remote log segment is deleted."
   val RemoteLogRetentionMinutesDoc = "Remote log retention in minutes, after which remote log segment is deleted."
   val RemoteLogRetentionBytesDoc = "Remote log size retention in bytes, after which remote log segment is deleted."
+  val RemoteLogReaderThreadsDoc = "Remote log reader thread pool size."
+  val RemoteLogReaderMaxPendingTasksDoc = "Maximum remote log reader thread pool task queue size. If the task queue is full, broker will stop reading remote log segments."
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMsDoc = "The socket timeout for controller-to-broker channels"
@@ -957,6 +963,8 @@ object KafkaConfig {
       .define(RemoteLogRetentionMillisProp, LONG, null, LOW, RemoteLogRetentionMillisDoc)
       .define(RemoteLogRetentionMinutesProp, LONG, Defaults.RemoteLogRetentionMinutes, LOW, RemoteLogRetentionMinutesDoc)
       .define(RemoteLogRetentionBytesProp, LONG, Defaults.RemoteLogRetentionBytes, LOW, RemoteLogRetentionBytesDoc)
+      .define(RemoteLogReaderThreadsProp, INT, Defaults.RemoteLogReaderThreads, LOW, RemoteLogReaderThreadsDoc)
+      .define(RemoteLogReaderMaxPendingTasksProp, INT, Defaults.RemoteLogReaderMaxPendingTasks, LOW, RemoteLogReaderMaxPendingTasksDoc)
 
       /** ********* Replication configuration ***********/
       .define(ControllerSocketTimeoutMsProp, INT, Defaults.ControllerSocketTimeoutMs, MEDIUM, ControllerSocketTimeoutMsDoc)
@@ -1258,6 +1266,8 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean, dynamicConfigO
     if (millis < 0) return -1
     millis
   }
+  def remoteLogReaderThreads: Int = getInt(KafkaConfig.RemoteLogReaderThreadsProp)
+  def remoteLogReaderMaxPendingTasks: Int = getInt(KafkaConfig.RemoteLogReaderMaxPendingTasksProp)
 
   /** ********* Replication configuration ***********/
   val controllerSocketTimeoutMs: Int = getInt(KafkaConfig.ControllerSocketTimeoutMsProp)

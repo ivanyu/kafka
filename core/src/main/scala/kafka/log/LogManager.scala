@@ -93,7 +93,7 @@ class LogManager(logDirs: Seq[File],
           x.deleteSegment(segment)
         })
       }
-      val remoteLogManager = new RemoteLogManager(logFetcher, logSegmentCleaner, remoteLogManagerConfig)
+      val remoteLogManager = new RemoteLogManager(logFetcher, logSegmentCleaner, remoteLogManagerConfig, time)
       Some(remoteLogManager)
     } else {
       None
