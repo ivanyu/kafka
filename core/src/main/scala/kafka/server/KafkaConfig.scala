@@ -963,8 +963,8 @@ object KafkaConfig {
       .define(RemoteLogRetentionMillisProp, LONG, null, LOW, RemoteLogRetentionMillisDoc)
       .define(RemoteLogRetentionMinutesProp, LONG, Defaults.RemoteLogRetentionMinutes, LOW, RemoteLogRetentionMinutesDoc)
       .define(RemoteLogRetentionBytesProp, LONG, Defaults.RemoteLogRetentionBytes, LOW, RemoteLogRetentionBytesDoc)
-      .define(RemoteLogReaderThreadsProp, INT, Defaults.RemoteLogReaderThreads, LOW, RemoteLogReaderThreadsDoc)
-      .define(RemoteLogReaderMaxPendingTasksProp, INT, Defaults.RemoteLogReaderMaxPendingTasks, LOW, RemoteLogReaderMaxPendingTasksDoc)
+      .define(RemoteLogReaderThreadsProp, INT, Defaults.RemoteLogReaderThreads, atLeast(1), LOW, RemoteLogReaderThreadsDoc)
+      .define(RemoteLogReaderMaxPendingTasksProp, INT, Defaults.RemoteLogReaderMaxPendingTasks, atLeast(1) , LOW, RemoteLogReaderMaxPendingTasksDoc)
 
       /** ********* Replication configuration ***********/
       .define(ControllerSocketTimeoutMsProp, INT, Defaults.ControllerSocketTimeoutMs, MEDIUM, ControllerSocketTimeoutMsDoc)
