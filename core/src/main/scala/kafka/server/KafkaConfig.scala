@@ -123,6 +123,8 @@ object Defaults {
   val RemoteStorageManager = ""
   val RemoteLogRetentionMinutes = 7 * 24 * 60L
   val RemoteLogRetentionBytes = 1024 * 1024 * 1024L
+  val RemoteLogManagerThreadPoolSize = 10
+  val RemoteLogManagerTaskIntervalMs = 30 * 1000L
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMs = RequestTimeoutMs
@@ -358,6 +360,8 @@ object KafkaConfig {
   val RemoteLogRetentionMillisProp = "remote.log.retention.ms"
   val RemoteLogRetentionMinutesProp = "remote.log.retention.minutes"
   val RemoteLogRetentionBytesProp = "remote.log.retention.bytes"
+  val RemoteLogManagerThreadPoolSizeProp = "remote.log.manager.thread.pool.size"
+  val RemoteLogManagerTaskIntervalMsProp = "remote.log.manager.task.interval.ms"
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMsProp = "controller.socket.timeout.ms"
@@ -670,6 +674,8 @@ object KafkaConfig {
   val RemoteLogRetentionMillisDoc = "Remote log retention in milli seconds, after which remote log segment is deleted."
   val RemoteLogRetentionMinutesDoc = "Remote log retention in minutes, after which remote log segment is deleted."
   val RemoteLogRetentionBytesDoc = "Remote log size retention in bytes, after which remote log segment is deleted."
+  val RemoteLogManagerThreadPoolSizeDoc = "Remote log thread pool size, which is used in scheduling tasks to copy segments, fetch remote log indexes and clean up remote log segments."
+  val RemoteLogManagerTaskIntervalMsDoc = "Interval at which remote log manager runs the scheduled tasks like copy segments, fetch remote log indexes and clean up remote log segments."
 
   /** ********* Replication configuration ***********/
   val ControllerSocketTimeoutMsDoc = "The socket timeout for controller-to-broker channels"
@@ -957,6 +963,8 @@ object KafkaConfig {
       .define(RemoteLogRetentionMillisProp, LONG, null, LOW, RemoteLogRetentionMillisDoc)
       .define(RemoteLogRetentionMinutesProp, LONG, Defaults.RemoteLogRetentionMinutes, LOW, RemoteLogRetentionMinutesDoc)
       .define(RemoteLogRetentionBytesProp, LONG, Defaults.RemoteLogRetentionBytes, LOW, RemoteLogRetentionBytesDoc)
+      .define(RemoteLogManagerThreadPoolSizeProp, INT, Defaults.RemoteLogManagerThreadPoolSize, atLeast(1), LOW, RemoteLogManagerThreadPoolSizeDoc)
+      .define(RemoteLogManagerTaskIntervalMsProp, LONG, Defaults.RemoteLogManagerTaskIntervalMs, atLeast(1), LOW, RemoteLogManagerTaskIntervalMsDoc)
 
       /** ********* Replication configuration ***********/
       .define(ControllerSocketTimeoutMsProp, INT, Defaults.ControllerSocketTimeoutMs, MEDIUM, ControllerSocketTimeoutMsDoc)
@@ -1258,6 +1266,9 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean, dynamicConfigO
     if (millis < 0) return -1
     millis
   }
+
+  def remoteLogManagerThreadPoolSize: Int = getInt(KafkaConfig.RemoteLogManagerThreadPoolSizeProp)
+  def remoteLogManagerTaskIntervalMs: Long = getLong(KafkaConfig.RemoteLogManagerTaskIntervalMsProp)
 
   /** ********* Replication configuration ***********/
   val controllerSocketTimeoutMs: Int = getInt(KafkaConfig.ControllerSocketTimeoutMsProp)

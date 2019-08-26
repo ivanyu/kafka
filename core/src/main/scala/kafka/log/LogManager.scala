@@ -93,7 +93,7 @@ class LogManager(logDirs: Seq[File],
           x.deleteSegment(segment)
         })
       }
-      val remoteLogManager = new RemoteLogManager(logFetcher, logSegmentCleaner, remoteLogManagerConfig)
+      val remoteLogManager = new RemoteLogManager(logFetcher, logSegmentCleaner, remoteLogManagerConfig, time)
       Some(remoteLogManager)
     } else {
       None
@@ -163,7 +163,6 @@ class LogManager(logDirs: Seq[File],
   }
 
   def onLeadershipChange(partitionsBecomeLeader: Set[Partition], partitionsBecomeFollower: Set[Partition]) = {
-    // todo:satish make respective changes in remote log tasks
     _remoteLogManager.foreach((rlm: RemoteLogManager) => {
       rlm.handleFollowerPartitions(partitionsBecomeFollower.map(x => x.topicPartition))
     })
