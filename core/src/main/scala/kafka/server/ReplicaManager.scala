@@ -922,7 +922,7 @@ class ReplicaManager(val config: KafkaConfig,
         }
         // If there is remote data, we will read remote data, instead of waiting for new data.
         val remoteFetch = new DelayedRemoteFetch(remoteFetchTask, remoteFetchResult, remoteFetchInfo.get, timeout,
-          fetchMetadata, this, quota, responseCallback)
+          fetchMetadata, logReadResults, this, quota, responseCallback)
 
         remoteFetchPurgatory.tryCompleteElseWatch(remoteFetch, Seq(key))
       } else {
@@ -1054,7 +1054,7 @@ class ReplicaManager(val config: KafkaConfig,
               // For the following topic-partitions, we return an empty record set
               val logOffsetMetadata = LogOffsetMetadata(fetchInfo.fetchOffset, LogOffsetMetadata.UnknownSegBaseOffset, LogOffsetMetadata.UnknownFilePosition)
               FetchDataInfo(logOffsetMetadata, MemoryRecords.EMPTY,
-                delayedRemoteStorageFetch = Option(RemoteStorageFetchInfo(adjustedMaxBytes, minOneMessage, tp, fetchInfo)))
+                delayedRemoteStorageFetch = Some(RemoteStorageFetchInfo(adjustedMaxBytes, minOneMessage, tp, fetchInfo)))
             }
 
             if (error.isDefined) createLogReadResult(error.get)
