@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.{BiConsumer, Consumer, Function}
 
 import kafka.log.{Log, LogSegment}
-import kafka.server.{Defaults, FetchDataInfo, KafkaConfig, LogOffsetMetadata}
+import kafka.server.{Defaults, FetchDataInfo, KafkaConfig, LogOffsetMetadata, RemoteStorageFetchInfo}
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
@@ -81,9 +81,9 @@ class RemoteLogManager(logFetcher: TopicPartition => Option[Log],
                        segmentCleaner: (TopicPartition, LogSegment) => Unit,
                        rlmConfig: RemoteLogManagerConfig,
                        time: Time = Time.SYSTEM) extends Logging with Closeable {
-
   private val leaderOrFollowerTasks: ConcurrentMap[TopicPartition, RLMTaskWithFuture] =
     new ConcurrentHashMap[TopicPartition, RLMTaskWithFuture]()
+  val remoteStorageFetcherThreadPool = new RemoteStorageReaderThreadPool(rlmConfig.remoteLogReaderThreads, rlmConfig.remoteLogReaderMaxPendingTasks, time)
 
   private def createRemoteStorageManager(): RemoteStorageManager = {
     val rsm = Class.forName(rlmConfig.remoteLogStorageManagerClass)
@@ -271,6 +271,37 @@ class RemoteLogManager(logFetcher: TopicPartition => Option[Log],
   }
 
   /**
+   * A remote log read task returned by asyncRead(). The caller of asyncRead() can use this object to cancel a
+   * pending task or check if the task is done.
+   */
+  case class AsyncReadTask(future: Future[Unit]) {
+    def cancel(mayInterruptIfRunning: Boolean): Boolean = {
+      val r = future.cancel(mayInterruptIfRunning)
+      if (r) {
+        // Removed the cancelled task from task queue
+        remoteStorageFetcherThreadPool.purge()
+      }
+      r
+    }
+
+    def isCancelled: Boolean = future.isCancelled
+
+    def isDone: Boolean = future.isDone
+  }
+
+  /**
+   * Submit a remote log read task.
+   *
+   * This method returns immediately. The read operation is executed in a thread pool.
+   * The callback will be called when the task is done.
+   *
+   * @throws RejectedExecutionException if the task cannot be accepted for execution (task queue is full)
+   */
+  def asyncRead(fetchInfo: RemoteStorageFetchInfo, callback: (RemoteLogReadResult) => Unit): AsyncReadTask = {
+    AsyncReadTask(remoteStorageFetcherThreadPool.submit(new RemoteLogReader(fetchInfo, this, callback)))
+  }
+
+  /**
    * Stops all the threads and releases all the resources.
    */
   def close(): Unit = {
@@ -287,11 +318,12 @@ class RemoteLogManager(logFetcher: TopicPartition => Option[Log],
       future.cancel(true)
     }
   }
-
 }
 
 case class RemoteLogManagerConfig(remoteLogStorageEnable: Boolean, remoteLogStorageManagerClass: String,
                                   remoteLogRetentionBytes: Long, remoteLogRetentionMillis: Long,
+                                  remoteLogReaderThreads: Int,
+                                  remoteLogReaderMaxPendingTasks: Int,
                                   remoteStorageConfig: Map[String, Any], remoteLogManagerThreadPoolSize: Int,
                                   remoteLogManagerTaskIntervalMs: Long)
 
@@ -300,11 +332,12 @@ object RemoteLogManager {
   def REMOTE_STORAGE_MANAGER_CONFIG_PREFIX = "remote.log.storage."
 
   def DefaultConfig = RemoteLogManagerConfig(remoteLogStorageEnable = Defaults.RemoteLogStorageEnable, null,
-    Defaults.RemoteLogRetentionBytes, TimeUnit.MINUTES.toMillis(Defaults.RemoteLogRetentionMinutes), Map.empty,
+    Defaults.RemoteLogRetentionBytes, TimeUnit.MINUTES.toMillis(Defaults.RemoteLogRetentionMinutes),
+    Defaults.RemoteLogReaderThreads, Defaults.RemoteLogReaderMaxPendingTasks, Map.empty,
     Defaults.RemoteLogManagerThreadPoolSize, Defaults.RemoteLogManagerTaskIntervalMs)
 
   def createRemoteLogManagerConfig(config: KafkaConfig): RemoteLogManagerConfig = {
-    var rsmProps = collection.mutable.Map[String, Any]()
+    var rsmProps = Map[String, Any]()
     config.props.forEach(new BiConsumer[Any, Any] {
       override def accept(key: Any, value: Any): Unit = {
         key match {
@@ -315,7 +348,8 @@ object RemoteLogManager {
       }
     })
     RemoteLogManagerConfig(config.remoteLogStorageEnable, config.remoteLogStorageManager,
-      config.remoteLogRetentionBytes, config.remoteLogRetentionMillis, rsmProps.toMap,
+      config.remoteLogRetentionBytes, config.remoteLogRetentionMillis,
+      config.remoteLogReaderThreads, config.remoteLogReaderMaxPendingTasks, rsmProps.toMap,
       config.remoteLogManagerThreadPoolSize, config.remoteLogManagerTaskIntervalMs)
   }
 }
