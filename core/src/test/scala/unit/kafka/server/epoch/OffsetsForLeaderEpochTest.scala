@@ -54,7 +54,7 @@ class OffsetsForLeaderEpochTest {
     replay(mockLog, logManager)
 
     // create a replica manager with 1 partition that has 1 replica
-    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, new AtomicBoolean(false),
+    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, None, new AtomicBoolean(false),
       QuotaFactory.instantiate(config, metrics, time, ""), new BrokerTopicStats,
       new MetadataCache(config.brokerId), new LogDirFailureChannel(config.logDirs.size))
     val partition = replicaManager.getOrCreatePartition(tp)
@@ -76,7 +76,7 @@ class OffsetsForLeaderEpochTest {
     replay(logManager)
 
     //create a replica manager with 1 partition that has 0 replica
-    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, new AtomicBoolean(false),
+    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, None, new AtomicBoolean(false),
       QuotaFactory.instantiate(config, metrics, time, ""), new BrokerTopicStats,
       new MetadataCache(config.brokerId), new LogDirFailureChannel(config.logDirs.size))
     replicaManager.getOrCreatePartition(tp)
@@ -99,7 +99,7 @@ class OffsetsForLeaderEpochTest {
     replay(logManager)
 
     //create a replica manager with 0 partition
-    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, new AtomicBoolean(false),
+    val replicaManager = new ReplicaManager(config, metrics, time, null, null, logManager, None, new AtomicBoolean(false),
       QuotaFactory.instantiate(config, metrics, time, ""), new BrokerTopicStats,
       new MetadataCache(config.brokerId), new LogDirFailureChannel(config.logDirs.size))
 

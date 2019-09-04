@@ -22,7 +22,6 @@ import java.nio.file.Files
 import java.util.concurrent._
 
 import com.yammer.metrics.core.Gauge
-import kafka.cluster.Partition
 import kafka.log.remote.{RemoteLogManager, RemoteLogManagerConfig}
 import kafka.metrics.KafkaMetricsGroup
 import kafka.server.checkpoints.OffsetCheckpointFile
@@ -85,30 +84,6 @@ class LogManager(logDirs: Seq[File],
   @volatile private var _currentDefaultConfig = initialDefaultConfig
   @volatile private var numRecoveryThreadsPerDataDir = recoveryThreadsPerDataDir
 
-  def createRemoteLogManager(remoteLogManagerConfig: RemoteLogManagerConfig): Option[RemoteLogManager] = {
-    if (remoteLogManagerConfig.remoteLogStorageEnable) {
-      val logFetcher: TopicPartition => Option[Log] = getLog(_)
-      def logSegmentCleaner(tp:TopicPartition, segment:LogSegment) : Unit = {
-        getLog(tp).foreach(x => {
-          x.deleteSegment(segment)
-        })
-      }
-      val remoteLogManager = new RemoteLogManager(logFetcher, logSegmentCleaner, remoteLogManagerConfig, time)
-      Some(remoteLogManager)
-    } else {
-      None
-    }
-  }
-
-  private var _remoteLogManager: Option[RemoteLogManager] = createRemoteLogManager(remoteLogManagerConfig)
-
-  def remoteLogManager: Option[RemoteLogManager] = _remoteLogManager
-
-  // Visible for testing
-  private[log] def setRemoteLogManager(rlm: Option[RemoteLogManager]): Unit = {
-    _remoteLogManager = rlm
-  }
-
   def reconfigureDefaultLogConfig(logConfig: LogConfig): Unit = {
     this._currentDefaultConfig = logConfig
   }
@@ -160,16 +135,6 @@ class LogManager(logDirs: Seq[File],
       },
       Map("logDirectory" -> dir.getAbsolutePath)
     )
-  }
-
-  def onLeadershipChange(partitionsBecomeLeader: Set[Partition], partitionsBecomeFollower: Set[Partition]) = {
-    _remoteLogManager.foreach((rlm: RemoteLogManager) => {
-      rlm.handleFollowerPartitions(partitionsBecomeFollower.map(x => x.topicPartition))
-    })
-
-    _remoteLogManager.foreach((rlm: RemoteLogManager) => {
-      rlm.handleLeaderPartitions(partitionsBecomeLeader.map(x => x.topicPartition))
-    })
   }
 
   /**
@@ -525,8 +490,6 @@ class LogManager(logDirs: Seq[File],
       dirLocks.foreach(_.destroy())
     }
 
-    _remoteLogManager.foreach(_.close())
-
     info("Shutdown complete.")
   }
 
@@ -661,7 +624,8 @@ class LogManager(logDirs: Seq[File],
     } {
       try {
         val logStartOffsets = partitionToLog.filter { case (_, log) =>
-          log.logStartOffset > log.logSegments.head.baseOffset
+          // if remote storage is enabled, logStartOffset can be beyond local segments
+          remoteLogManagerConfig.remoteLogStorageEnable || log.logStartOffset > log.logSegments.head.baseOffset
         }.mapValues(_.logStartOffset)
         checkpoint.write(logStartOffsets)
       } catch {
@@ -1032,7 +996,8 @@ object LogManager {
             kafkaScheduler: KafkaScheduler,
             time: Time,
             brokerTopicStats: BrokerTopicStats,
-            logDirFailureChannel: LogDirFailureChannel): LogManager = {
+            logDirFailureChannel: LogDirFailureChannel,
+            remoteLogManagerConfig:RemoteLogManagerConfig = RemoteLogManager.DefaultConfig): LogManager = {
     val defaultProps = KafkaServer.copyKafkaConfigToLog(config)
     val defaultLogConfig = LogConfig(defaultProps)
 
@@ -1058,7 +1023,7 @@ object LogManager {
       brokerTopicStats = brokerTopicStats,
       logDirFailureChannel = logDirFailureChannel,
       time = time,
-      RemoteLogManager.createRemoteLogManagerConfig(config)
+      remoteLogManagerConfig
     )
   }
 }
