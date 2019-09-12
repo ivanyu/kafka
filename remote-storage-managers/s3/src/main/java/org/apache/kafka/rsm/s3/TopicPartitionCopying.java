@@ -106,7 +106,7 @@ class TopicPartitionCopying {
                     S3RemoteStorageManager.offsetIndexFileKey(topicPartition, baseOffset, lastOffset), logSegment.offsetIndex().file());
                 Upload timeIndexFileUpload = uploadFile(
                     S3RemoteStorageManager.timestampIndexFileKey(topicPartition, baseOffset, lastOffset), logSegment.timeIndex().file());
-                Upload largestTimestampReverseIndexFile = uploadLargestTimestampReverseIndexFile(logSegment);
+                Upload largestTimestampReverseIndexFile = uploadLastModifiedReverseIndexFile(logSegment);
                 Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
                 uploads = Arrays.asList(
                     logFileUpload, offsetIndexFileUpload, timeIndexFileUpload, largestTimestampReverseIndexFile, remoteLogIndexUpload
@@ -137,15 +137,10 @@ class TopicPartitionCopying {
         return transferManager.upload(bucketName, key, file);
     }
 
-    private Upload uploadLargestTimestampReverseIndexFile(LogSegment logSegment) throws IOException {
-        String key = S3RemoteStorageManager.largestTimestampReverseIndexFileKey(topicPartition, logSegment.largestTimestamp());
-        String content = Log.filenamePrefixFromOffset(baseOffset) + "-" + Log.filenamePrefixFromOffset(lastOffset);
-        byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
-        ObjectMetadata metadata = new ObjectMetadata();
-        metadata.setContentLength(contentBytes.length);
-        try (InputStream inputStream = new ByteArrayInputStream(contentBytes)) {
-            return transferManager.upload(bucketName, key, inputStream, metadata);
-        }
+    private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) throws IOException {
+        String key = S3RemoteStorageManager.lastModifiedReverseIndexFileKey(
+            topicPartition, logSegment.lastModified(), baseOffset, lastOffset);
+        return uploadEmptyFile(key);
     }
 
     private Upload uploadRemoteLogIndex(List<RemoteLogIndexEntry> remoteLogIndexEntries) throws IOException {
@@ -167,6 +162,10 @@ class TopicPartitionCopying {
 
     private Upload uploadMarker() {
         String key = S3RemoteStorageManager.markerFileKey(topicPartition, baseOffset, lastOffset);
+        return uploadEmptyFile(key);
+    }
+
+    private Upload uploadEmptyFile(String key) {
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(0);
         return transferManager.upload(bucketName, key, EMPTY_INPUT_STREAM, metadata);
