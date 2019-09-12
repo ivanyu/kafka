@@ -63,6 +63,8 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     private int NORMAL_BATCH_RECORD_COUNT = 10;
     private int CONTROL_BATCH_RECORD_COUNT = 1;
 
+    private Long segmentFileLastModified = null;
+
     @ClassRule
     public static LocalStackContainer localstack = new LocalStackContainer().withServices(S3);
     private static AmazonS3 s3Client;
@@ -104,9 +106,9 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testEarliestLogOffset() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
-        assertEquals(segmentsOnS3Setup.baseOffset,
-            remoteStorageManager.earliestLogOffset(segmentsOnS3Setup.topicPartition));
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
+        assertEquals(segmentOnS3Setup.baseOffset,
+            remoteStorageManager.earliestLogOffset(segmentOnS3Setup.topicPartition));
     }
 
     @Test
@@ -168,13 +170,13 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             s3Key(TP0, "index", 0, 29),
             s3Key(TP0, "time-index", 0, 29),
             s3Key(TP0, "remote-log-index", 0, 29),
-            TP0 + "/largest-timestamp-reverse-index/" + Log.filenamePrefixFromOffset(segment1.largestTimestamp()),
+            lastModifiedReverseIndexS3Key(TP0, segment1.lastModified(), 0, 29),
             s3Key(TP0, "marker", 0, 29),
             s3Key(TP1, "log", 5, 34),
             s3Key(TP1, "index", 5, 34),
             s3Key(TP1, "time-index", 5, 34),
             s3Key(TP1, "remote-log-index", 5, 34),
-            TP1 + "/largest-timestamp-reverse-index/" + Log.filenamePrefixFromOffset(segment2.largestTimestamp()),
+            lastModifiedReverseIndexS3Key(TP1, segment2.lastModified(), 5, 34),
             s3Key(TP1, "marker", 5, 34)
         ));
     }
@@ -199,14 +201,70 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             s3Key(TP0, "index", 0, 99),
             s3Key(TP0, "time-index", 0, 99),
             s3Key(TP0, "remote-log-index", 0, 99),
-            TP0 + "/largest-timestamp-reverse-index/" + Log.filenamePrefixFromOffset(segment1.largestTimestamp()),
+            lastModifiedReverseIndexS3Key(TP0, segment1.lastModified(), 0, 99),
             s3Key(TP0, "marker", 0, 99)
         ));
     }
 
     @Test
+    public void testCleanupLogUntilWhenEmpty() throws IOException {
+        remoteStorageManager.configure(basicProps(bucket));
+        assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, Long.MAX_VALUE));
+    }
+
+    @Test
+    public void testCleanupLogBeforeTheEarliest() throws IOException {
+        final SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
+        assertEquals(segmentOnS3Setup.baseOffset, remoteStorageManager.cleanupLogUntil(TP0, 0));
+
+        // All files must remain in place.
+        List<String> keys = listS3Keys();
+        assertThat(keys, containsInAnyOrder(
+            s3Key(TP0, "log", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
+            s3Key(TP0, "index", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
+            s3Key(TP0, "time-index", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
+            s3Key(TP0, "remote-log-index", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
+            lastModifiedReverseIndexS3Key(TP0, segmentOnS3Setup.segment.lastModified(), segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
+            s3Key(TP0, "marker", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset)
+        ));
+    }
+
+    @Test
+    public void testCleanupLogExactlyMatchTimestamp() throws IOException {
+        final SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
+        assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup.segment.lastModified()));
+        assertThat(listS3Keys(), empty());
+    }
+
+    @Test
+    public void testCleanupLogBetweenSegments() throws IOException {
+        final SegmentOnS3Setup segmentOnS3Setup1 = uploadSegment(0, true);
+        final SegmentOnS3Setup segmentOnS3Setup2 = uploadSegment(1000, false);
+        assertEquals(1000L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup1.segment.lastModified() + 1));
+
+        // All files of the second segment must remain in place.
+        List<String> keys = listS3Keys();
+        assertThat(keys, containsInAnyOrder(
+            s3Key(TP0, "log", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset),
+            s3Key(TP0, "index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset),
+            s3Key(TP0, "time-index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset),
+            s3Key(TP0, "remote-log-index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset),
+            lastModifiedReverseIndexS3Key(TP0, segmentOnS3Setup2.segment.lastModified(), segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset),
+            s3Key(TP0, "marker", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset)
+        ));
+    }
+
+    @Test
+    public void testCleanupLogAfterAllSegments() throws IOException {
+        final SegmentOnS3Setup segmentOnS3Setup1 = uploadSegment(0, true);
+        final SegmentOnS3Setup segmentOnS3Setup2 = uploadSegment(1000, false);
+        assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup2.segment.lastModified() + 1));
+        assertThat(listS3Keys(), empty());
+    }
+
+    @Test
     public void testReadFromFirstOffset() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
 
         int maxBytes = Integer.MAX_VALUE;
         Records readRecords = remoteStorageManager.read(
@@ -226,7 +284,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadFromNotFirstOffsetInFirstBatch() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
 
         int maxBytes = Integer.MAX_VALUE;
         Records readRecords = remoteStorageManager.read(
@@ -245,7 +303,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadFromSecondBatch() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
 
         int maxBytes = Integer.MAX_VALUE;
         Records readRecords = remoteStorageManager.read(
@@ -263,7 +321,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadBeyondLastOffset() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
         Throwable e = assertThrows(IllegalArgumentException.class,
             () -> remoteStorageManager.read(remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 100, true));
         assertEquals("startOffset > remoteLogIndexEntry.lastOffset(): 100 > 21", e.getMessage());
@@ -271,7 +329,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadMaxBytesLimitNoCompleteBatchMinOneRecordFalse() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
 
         int maxBytes = 1;
         Records readRecords = remoteStorageManager.read(
@@ -283,7 +341,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadMaxBytesLimitNoCompleteBatchMinOneRecordTrue() throws IOException {
-        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegments().remoteLogIndexEntries;
+        List<RemoteLogIndexEntry> remoteLogIndexEntries = uploadSegment(0, true).remoteLogIndexEntries;
 
         int maxBytes = 1;
         Records readRecords = remoteStorageManager.read(
@@ -306,26 +364,26 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testReadWithoutMarker() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
 
-        deleteMarker(segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset);
+        deleteMarker(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset);
 
         Records readRecords = remoteStorageManager.read(
-            segmentsOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true);
+            segmentOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true);
         assertEquals(NORMAL_BATCH_RECORD_COUNT * 3 + CONTROL_BATCH_RECORD_COUNT, countRecords(readRecords));
     }
 
     @Test
     public void testReadWithoutLogFile() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
 
-        deleteLogFile(segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset);
+        deleteLogFile(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset);
 
         Throwable e = assertThrows(KafkaException.class,
-            () -> remoteStorageManager.read(segmentsOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true));
+            () -> remoteStorageManager.read(segmentOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true));
         assertEquals(
             "Error reading log file " +
-                s3Key(segmentsOnS3Setup.topicPartition, "log", segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset),
+                s3Key(segmentOnS3Setup.topicPartition, "log", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
             e.getMessage());
     }
 
@@ -388,29 +446,29 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testDeleteTopicPartition() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
-        remoteStorageManager.deleteTopicPartition(segmentsOnS3Setup.topicPartition);
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
+        remoteStorageManager.deleteTopicPartition(segmentOnS3Setup.topicPartition);
         assertThat(listS3Keys(), empty());
     }
 
     @Test
     public void testGetRemoteLogIndexEntries() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset, segmentsOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
             Collections.emptyMap());
         List<RemoteLogIndexEntry> result = remoteStorageManager.getRemoteLogIndexEntries(segmentInfo);
-        assertEquals(segmentsOnS3Setup.remoteLogIndexEntries, result);
+        assertEquals(segmentOnS3Setup.remoteLogIndexEntries, result);
     }
 
     @Test
     public void testGetRemoteLogIndexEntriesWithoutMarker() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
 
-        deleteMarker(segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset);
+        deleteMarker(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset);
 
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset, segmentsOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
             Collections.emptyMap());
         Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
         assertEquals("Marker for " + segmentInfo + " doesn't exist", e.getMessage());
@@ -418,17 +476,17 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
     @Test
     public void testGetRemoteLogIndexEntriesNoIndexFile() throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
 
-        deleteRemoteLogIndexFile(segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset);
+        deleteRemoteLogIndexFile(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset);
 
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset, segmentsOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
             Collections.emptyMap());
         Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
         assertEquals(
             "Error reading remote log index file " +
-                s3Key(segmentsOnS3Setup.topicPartition, "remote-log-index", segmentsOnS3Setup.baseOffset, segmentsOnS3Setup.lastOffset),
+                s3Key(segmentOnS3Setup.topicPartition, "remote-log-index", segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset),
             e.getMessage());
     }
 
@@ -439,11 +497,11 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     }
 
     private void testMaxBytesLimitOneCompleteBatch(boolean minOneRecord) throws IOException {
-        SegmentsOnS3Setup segmentsOnS3Setup = uploadSegments();
+        SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, true);
 
-        int maxBytes = segmentsOnS3Setup.batchSizesInBytes.get(0) + 1;
+        int maxBytes = segmentOnS3Setup.batchSizesInBytes.get(0) + 1;
         Records readRecords = remoteStorageManager.read(
-            segmentsOnS3Setup.remoteLogIndexEntries.get(0),
+            segmentOnS3Setup.remoteLogIndexEntries.get(0),
             maxBytes, 0, minOneRecord);
 
         assertEquals(NORMAL_BATCH_RECORD_COUNT, countRecords(readRecords));
@@ -451,32 +509,42 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         assertThat(readRecords.sizeInBytes(), lessThanOrEqualTo(maxBytes));
     }
 
-    private SegmentsOnS3Setup uploadSegments() throws IOException {
-        LogSegment segment = createLogSegment(0);
-        appendRecordBatch(segment, 0, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 10, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 20, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendControlBatch(segment, 21);
-        appendRecordBatch(segment, 31, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 41, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 51, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendControlBatch(segment, 52);
-        appendRecordBatch(segment, 62, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 72, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendRecordBatch(segment, 82, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
-        appendControlBatch(segment, 83);
+    private SegmentOnS3Setup uploadSegment(int segmentOffset, boolean configureRemoteStorageManager) throws IOException {
+        LogSegment segment = createLogSegment(segmentOffset);
+        appendRecordBatch(segment, segmentOffset + 0, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 10, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 20, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendControlBatch(segment, segmentOffset + 21);
+        appendRecordBatch(segment, segmentOffset + 31, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 41, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 51, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendControlBatch(segment, segmentOffset + 52);
+        appendRecordBatch(segment, segmentOffset + 62, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 72, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendRecordBatch(segment, segmentOffset + 82, NORMAL_RECORD_SIZE, NORMAL_BATCH_RECORD_COUNT);
+        appendControlBatch(segment, segmentOffset + 83);
         segment.onBecomeInactiveSegment();
 
-        Map<String, String> props = basicProps(bucket);
+        if (segmentFileLastModified == null) {
+            segmentFileLastModified = segment.lastModified();
+        } else {
+            segmentFileLastModified += 1000;
+            segment.lastModified_$eq(segmentFileLastModified);
+        }
+
         List<Integer> batchSizesInByte = StreamSupport.stream(segment.log().batches().spliterator(), false)
             .map(FileLogInputStream.FileChannelRecordBatch::sizeInBytes)
             .collect(Collectors.toList());
-        props.put(S3RemoteStorageManagerConfig.INDEX_INTERVAL_BYTES_CONFIG,
-            Integer.toString(batchSizesInByte.get(0) + batchSizesInByte.get(1) + batchSizesInByte.get(2) + batchSizesInByte.get(3)));
-        remoteStorageManager.configure(props);
+        if (configureRemoteStorageManager) {
+            Map<String, String> props = basicProps(bucket);
+            props.put(S3RemoteStorageManagerConfig.INDEX_INTERVAL_BYTES_CONFIG,
+                Integer.toString(batchSizesInByte.get(0) + batchSizesInByte.get(1) + batchSizesInByte.get(2) + batchSizesInByte.get(3)));
+            remoteStorageManager.configure(props);
+        }
 
         List<RemoteLogIndexEntry> logIndexEntries = remoteStorageManager.copyLogSegment(TP0, segment);
-        return new SegmentsOnS3Setup(TP0, logIndexEntries, batchSizesInByte, 0, 83);
+        return new SegmentOnS3Setup(TP0, segment,
+            logIndexEntries, batchSizesInByte, segmentOffset + 0, segmentOffset + 83);
     }
 
     private int countRecords(Records records) {
@@ -551,18 +619,21 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         return objects.stream().map(S3ObjectSummary::getKey).collect(Collectors.toList());
     }
 
-    private static class SegmentsOnS3Setup {
+    private static class SegmentOnS3Setup {
         final TopicPartition topicPartition;
+        final LogSegment segment;
         final List<RemoteLogIndexEntry> remoteLogIndexEntries;
         final List<Integer> batchSizesInBytes;
         final long baseOffset;
         final long lastOffset;
 
-        SegmentsOnS3Setup(TopicPartition topicPartition,
-                          List<RemoteLogIndexEntry> remoteLogIndexEntries,
-                          List<Integer> batchSizesInBytes,
-                          long baseOffset, long lastOffset) {
+        SegmentOnS3Setup(TopicPartition topicPartition,
+                         LogSegment segment,
+                         List<RemoteLogIndexEntry> remoteLogIndexEntries,
+                         List<Integer> batchSizesInBytes,
+                         long baseOffset, long lastOffset) {
             this.topicPartition = topicPartition;
+            this.segment = segment;
             this.remoteLogIndexEntries = new ArrayList<>(remoteLogIndexEntries);
             this.batchSizesInBytes = new ArrayList<>(batchSizesInBytes);
             this.baseOffset = baseOffset;
