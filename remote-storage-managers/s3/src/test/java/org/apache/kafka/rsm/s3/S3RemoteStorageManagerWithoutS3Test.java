@@ -121,7 +121,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
                 remoteStorageManager.cancelCopyingLogSegment(TP0);
             } catch (InterruptedException ignored) { }
         }).start();
-        Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment1));
+        Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment1, 0));
         assertEquals("Copying of segment " + segment1 + " for topic-partition " + TP0 + " interrupted", e.getMessage());
     }
 
@@ -131,7 +131,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
         appendRecordBatch(segment, 0, 10, 10);
         segment.onBecomeInactiveSegment();
 
-        Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment));
+        Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment, 0));
         assertEquals(e.getMessage(), "Error copying files for " + segment + " in " + TP0);
     }
 
@@ -143,24 +143,25 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
 
     @Test
     public void testGetRemoteLogIndexEntriesWithUnreachableEndpoint() {
-        RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(0, 10, TP0, Collections.emptyMap());
-        Throwable e = assertThrows(KafkaException.class,
-            () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
-        assertEquals(e.getMessage(), "Error checking marker file " + s3Key(TP0, "marker", 0, 10));
+//        RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(0, 10, TP0, Collections.emptyMap());
+//        Throwable e = assertThrows(KafkaException.class,
+//            () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
+//        assertEquals(e.getMessage(), "Error checking marker file " + s3Key(TP0, "marker", 0, 10));
+        throw new RuntimeException("rewrite w.r.t leader epoch");
     }
 
     @Test
     public void testReadWithUnreachableEndpoint() {
-        String rdiStr = s3Key(TP0, "log", 0, 10) + "#123";
+        String rdiStr = s3Key(TP0, "log", 0, 10, 0) + "#123";
         RemoteLogIndexEntry remoteLogIndexEntry = RemoteLogIndexEntry.apply(0, 10, 0, 100, 10, rdiStr.getBytes());
         Throwable e = assertThrows(KafkaException.class,
             () -> remoteStorageManager.read(remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
-        assertEquals(e.getMessage(), "Error reading log file " + s3Key(TP0, "log", 0, 10));
+        assertEquals(e.getMessage(), "Error reading log file " + s3Key(TP0, "log", 0, 10, 0));
     }
 
     @Test
     public void testReadIncorrectRDI() {
-        String rdiStr = s3Key(TP0, "log", 0, 10) + "#incorrect";
+        String rdiStr = s3Key(TP0, "log", 0, 10, 0) + "#incorrect";
         RemoteLogIndexEntry remoteLogIndexEntry = RemoteLogIndexEntry.apply(0, 10, 0, 100, 10, rdiStr.getBytes());
         Throwable e = assertThrows(IllegalArgumentException.class,
             () -> remoteStorageManager.read(remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
@@ -180,11 +181,12 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
                 @Override
                 public TopicPartitionCopying answer() {
                     return new TopicPartitionCopying(
-                        (TopicPartition) EasyMock.getCurrentArguments()[0],
-                        (LogSegment) EasyMock.getCurrentArguments()[1],
-                        (String) EasyMock.getCurrentArguments()[2],
-                        (TransferManager) EasyMock.getCurrentArguments()[3],
-                        (Integer) EasyMock.getCurrentArguments()[4]) {
+                        (int) EasyMock.getCurrentArguments()[0],
+                        (TopicPartition) EasyMock.getCurrentArguments()[1],
+                        (LogSegment) EasyMock.getCurrentArguments()[2],
+                        (String) EasyMock.getCurrentArguments()[3],
+                        (TransferManager) EasyMock.getCurrentArguments()[4],
+                        (Integer) EasyMock.getCurrentArguments()[5]) {
                         @Override
                         public List<RemoteLogIndexEntry> copy() throws IOException {
                             try {
@@ -204,7 +206,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
 
         new Thread(() -> {
             try {
-                remoteStorageManager.copyLogSegment(TP0, segment);
+                remoteStorageManager.copyLogSegment(TP0, segment, 0);
                 throw new AssertionError("Shouldn't be here");
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -213,7 +215,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
         Thread.sleep(1000);
 
         // Try to run copy concurrently.
-        Throwable e = assertThrows(IllegalStateException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment));
+        Throwable e = assertThrows(IllegalStateException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment, 0));
         assertEquals("Already ongoing copying for " + TP0, e.getMessage());
     }
 }

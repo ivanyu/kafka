@@ -123,12 +123,16 @@ public class Main {
                 false,
                 ""
             );
-            List<RemoteLogIndexEntry> remoteLog = rsm.copyLogSegment(tp, segment);
+            List<RemoteLogIndexEntry> remoteLog = rsm.copyLogSegment(tp, segment, 0);
             if (!remoteLog.isEmpty()) {
                 System.out.println(remoteLog.get(0));
                 if (firstRemoteLogIndexEntry == null) {
                     firstRemoteLogIndexEntry = remoteLog.get(0);
                 }
+            }
+
+            if (i < 3) {
+                rsm.copyLogSegment(tp, segment, 1);
             }
         }
         
@@ -138,13 +142,13 @@ public class Main {
         List<RemoteLogSegmentInfo> remoteSegmentInfos = rsm.listRemoteSegments(tp);
         System.out.println(remoteSegmentInfos);
 
-        System.out.println(rsm.deleteLogSegment(new RemoteLogSegmentInfo(0, 6, tp, Collections.emptyMap())));
-        System.out.println(rsm.deleteLogSegment(remoteSegmentInfos.get(0)));
-        System.out.println(rsm.deleteLogSegment(remoteSegmentInfos.get(0)));
-
-        for (int i = 1; i < baseOffsets.length; i += 1) {
-            rsm.deleteLogSegment(remoteSegmentInfos.get(i));
-        }
+//        System.out.println(rsm.deleteLogSegment(new RemoteLogSegmentInfo(0, 6, tp, Collections.emptyMap())));
+//        System.out.println(rsm.deleteLogSegment(remoteSegmentInfos.get(0)));
+//        System.out.println(rsm.deleteLogSegment(remoteSegmentInfos.get(0)));
+//
+//        for (int i = 1; i < baseOffsets.length; i += 1) {
+//            rsm.deleteLogSegment(remoteSegmentInfos.get(i));
+//        }
 
         rsm.close();
     }

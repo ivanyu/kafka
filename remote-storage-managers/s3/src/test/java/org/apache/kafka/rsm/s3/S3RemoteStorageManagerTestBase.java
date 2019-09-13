@@ -93,16 +93,18 @@ class S3RemoteStorageManagerTestBase {
     }
 
     String lastModifiedReverseIndexS3Key(TopicPartition topicPartition,
-                                         long lastModifiedMs, long baseOffset, long lastOffset) {
+                                         long lastModifiedMs, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartition + "/last-modified-reverse-index/" +
             Log.filenamePrefixFromOffset(lastModifiedMs) + "-" +
             Log.filenamePrefixFromOffset(baseOffset) + "-" +
-            Log.filenamePrefixFromOffset(lastOffset);
+            Log.filenamePrefixFromOffset(lastOffset) +
+            "-le" + leaderEpoch;
     }
 
-    String s3Key(TopicPartition topicPartition, String dir, long baseOffset, long lastOffset) {
+    String s3Key(TopicPartition topicPartition, String dir, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartition + "/" + dir + "/" +
             Log.filenamePrefixFromOffset(baseOffset) + "-" +
-            Log.filenamePrefixFromOffset(lastOffset);
+            Log.filenamePrefixFromOffset(lastOffset) +
+            "-le" + leaderEpoch;
     }
 }
