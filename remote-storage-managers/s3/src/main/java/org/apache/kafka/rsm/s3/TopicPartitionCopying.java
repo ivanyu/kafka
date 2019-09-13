@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.rsm.s3;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,17 +29,23 @@ import java.util.concurrent.CancellationException;
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.rsm.s3.keys.LogFileKey;
+import org.apache.kafka.rsm.s3.keys.MarkerKey;
+import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
+import org.apache.kafka.rsm.s3.keys.RemoteLogIndexFileKey;
+import org.apache.kafka.rsm.s3.keys.TimeIndexFileKey;
 
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
-import kafka.log.Log;
 import kafka.log.LogSegment;
 import kafka.log.remote.RDI;
 import kafka.log.remote.RemoteLogIndexEntry;
 
 class TopicPartitionCopying {
+    private final int leaderEpoch;
+
     private final TopicPartition topicPartition;
     private final LogSegment logSegment;
 
@@ -69,11 +74,13 @@ class TopicPartitionCopying {
         }
     };
 
-    TopicPartitionCopying(TopicPartition topicPartition,
+    TopicPartitionCopying(int leaderEpoch,
+                          TopicPartition topicPartition,
                           LogSegment logSegment,
                           String bucketName,
                           TransferManager transferManager,
                           int indexIntervalBytes) {
+        this.leaderEpoch = leaderEpoch;
         this.topicPartition = topicPartition;
         this.logSegment = logSegment;
         this.bucketName = bucketName;
@@ -85,7 +92,11 @@ class TopicPartitionCopying {
         remoteLogIndexEntries = RemoteLogIndexer.index(
             logSegment.log().batches(),
             indexIntervalBytes,
-            (firstBatch) -> s3RDI(S3RemoteStorageManager.logFileKey(topicPartition, baseOffset, lastOffset), firstBatch.position())
+            (firstBatch) ->
+                s3RDI(
+                    LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch),
+                    firstBatch.position()
+                )
         );
     }
 
@@ -100,12 +111,9 @@ class TopicPartitionCopying {
                     throwSegmentCopyingInterruptedException(null);
                 }
 
-                Upload logFileUpload = uploadFile(
-                    S3RemoteStorageManager.logFileKey(topicPartition, baseOffset, lastOffset), logSegment.log().file());
-                Upload offsetIndexFileUpload = uploadFile(
-                    S3RemoteStorageManager.offsetIndexFileKey(topicPartition, baseOffset, lastOffset), logSegment.offsetIndex().file());
-                Upload timeIndexFileUpload = uploadFile(
-                    S3RemoteStorageManager.timestampIndexFileKey(topicPartition, baseOffset, lastOffset), logSegment.timeIndex().file());
+                Upload logFileUpload = uploadLogFile(logSegment);
+                Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
+                Upload timeIndexFileUpload = uploadTimeIndexLogFile(logSegment);
                 Upload largestTimestampReverseIndexFile = uploadLastModifiedReverseIndexFile(logSegment);
                 Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
                 uploads = Arrays.asList(
@@ -133,13 +141,28 @@ class TopicPartitionCopying {
         }
     }
 
+    private Upload uploadLogFile(LogSegment logSegment) {
+        final String key = LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        return uploadFile(key, logSegment.log().file());
+    }
+
+    private Upload uploadOffsetIndexLogFile(LogSegment logSegment) {
+        final String key = OffsetIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        return uploadFile(key, logSegment.offsetIndex().file());
+    }
+
+    private Upload uploadTimeIndexLogFile(LogSegment logSegment) {
+        final String key = TimeIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        return uploadFile(key, logSegment.timeIndex().file());
+    }
+
     private Upload uploadFile(String key, File file) {
         return transferManager.upload(bucketName, key, file);
     }
 
-    private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) throws IOException {
+    private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) {
         String key = S3RemoteStorageManager.lastModifiedReverseIndexFileKey(
-            topicPartition, logSegment.lastModified(), baseOffset, lastOffset);
+            topicPartition, logSegment.lastModified(), baseOffset, lastOffset, leaderEpoch);
         return uploadEmptyFile(key);
     }
 
@@ -154,14 +177,14 @@ class TopicPartitionCopying {
 
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(totalSize);
-        String key = S3RemoteStorageManager.remoteLogIndexFileKey(topicPartition, baseOffset, lastOffset);
+        String key = RemoteLogIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         try (InputStream inputStream = new GatheringByteBufferInputStream(remoteLogIndexEntryBuffers)) {
             return transferManager.upload(bucketName, key, inputStream, metadata);
         }
     }
 
     private Upload uploadMarker() {
-        String key = S3RemoteStorageManager.markerFileKey(topicPartition, baseOffset, lastOffset);
+        String key = MarkerKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         return uploadEmptyFile(key);
     }
 
