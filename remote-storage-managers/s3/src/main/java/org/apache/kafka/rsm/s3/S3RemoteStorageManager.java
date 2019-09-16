@@ -21,10 +21,12 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -81,6 +83,9 @@ import scala.collection.JavaConverters;
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO log
+
+    // TODO common prefix
+
     // TODO migration test
 
     // TODO handle the situation with several leader epochs, test it
@@ -211,8 +216,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public List<RemoteLogSegmentInfo> listRemoteSegments(TopicPartition topicPartition, long minBaseOffset) throws IOException {
-        List<RemoteLogSegmentInfo> result = new ArrayList<>();
-
         String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
         String startAfterKey = MarkerKey.baseOffsetPrefix(topicPartition, minBaseOffset);
         ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
@@ -222,6 +225,8 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             .withStartAfter(startAfterKey);
         ListObjectsV2Result listObjectsResult;
 
+        List<RemoteLogSegmentInfo> result = new ArrayList<>();
+        Set<OffsetPair> seenOffsetPairs = new HashSet<>();
         try {
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
@@ -242,10 +247,14 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                     }
                     assert marker.baseOffset() >= minBaseOffset;
 
-                    RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
-                        marker.baseOffset(), marker.endOffset(), topicPartition,
-                        Collections.emptyMap());
-                    result.add(segment);
+                    // One offset pair may appear in different leader epochs, need to prevent duplication.
+                    if (!seenOffsetPairs.contains(marker.offsetPair())) {
+                        RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
+                            marker.baseOffset(), marker.endOffset(), topicPartition,
+                            Collections.emptyMap());
+                        result.add(segment);
+                        seenOffsetPairs.add(marker.offsetPair());
+                    }
                 }
 
                 listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());

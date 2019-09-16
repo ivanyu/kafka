@@ -10,10 +10,14 @@ final class Marker {
     private final long endOffset;
     private final int leaderEpoch;
 
+    private final OffsetPair offsetPair;
+
     private Marker(long baseOffset, long endOffset, int leaderEpoch) {
         this.baseOffset = baseOffset;
         this.endOffset = endOffset;
         this.leaderEpoch = leaderEpoch;
+
+        this.offsetPair = new OffsetPair(baseOffset, endOffset);
     }
 
     public long baseOffset() {
@@ -26,6 +30,10 @@ final class Marker {
 
     public int leaderEpoch() {
         return leaderEpoch;
+    }
+
+    public OffsetPair offsetPair() {
+        return offsetPair;
     }
 
     /**
