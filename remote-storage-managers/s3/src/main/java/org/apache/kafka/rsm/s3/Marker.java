@@ -4,11 +4,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class Marker {
+    private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d+)");
+
     private final long baseOffset;
     private final long endOffset;
     private final int leaderEpoch;
-
-    private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d+)");
 
     private Marker(long baseOffset, long endOffset, int leaderEpoch) {
         this.baseOffset = baseOffset;
@@ -29,7 +29,7 @@ final class Marker {
     }
 
     /**
-     * Parses marker string in the format {@code {base offset}-{last offset}-le{leader epoch}}
+     * Parses marker string in the format {@code {base offset}-{last offset}-le{leader epoch}}.
      * @throws IllegalArgumentException if the format is incorrect.
      */
     public static Marker parse(String markerStr) {
