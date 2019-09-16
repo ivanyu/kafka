@@ -39,8 +39,12 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.rsm.s3.keys.LastModifiedReverseIndexKey;
+import org.apache.kafka.rsm.s3.keys.LogFileKey;
 import org.apache.kafka.rsm.s3.keys.MarkerKey;
+import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
 import org.apache.kafka.rsm.s3.keys.RemoteLogIndexFileKey;
+import org.apache.kafka.rsm.s3.keys.TimeIndexFileKey;
 
 import com.amazonaws.SdkClientException;
 import com.amazonaws.client.builder.AwsClientBuilder;
@@ -55,7 +59,6 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
-import kafka.log.Log;
 import kafka.log.LogSegment;
 import kafka.log.remote.RemoteLogIndexEntry;
 import kafka.log.remote.RemoteLogSegmentInfo;
@@ -74,11 +77,10 @@ import scala.collection.JavaConverters;
 //  - last offset reverse index and time clean-up
 //  - migration (moving files and everything should work)
 //  - reliance on the lexicographical order of list
-//  - leader epoch priority
+//  - leader epoch and their priority
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO log
-    // TODO leader epoch
     // TODO migration test
 
     // TODO handle the situation with several leader epochs, test it
@@ -88,10 +90,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     // TODO should path be added to RDI? (because of segment info)
 
     // TODO end offset vs last offset naming
-
-    private static final String LAST_MODIFIED_REVERSE_INDEX_FILES_DIRECTORY = "last-modified-reverse-index";
-
-    private static final Pattern LAST_MODIFIED_REVERSE_INDEX_NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-(\\d{20})");
 
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
 
@@ -368,56 +366,61 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     @Override
     public long cleanupLogUntil(TopicPartition topicPartition, long cleanUpTillMs) throws IOException {
         // TODO async deletion (delete marker + background task). Don't forget to handle delete-and-recreate scenario.
+        // TODO collect, delete markers, delete the rest
         // TODO handle failure-resume (probably, related to async deletion).
 
-        String fileS3KeyPrefix = fileS3KeyPrefix(topicPartition, LAST_MODIFIED_REVERSE_INDEX_FILES_DIRECTORY) + "/";
+        String directoryPrefix = LastModifiedReverseIndexKey.directoryPrefix(topicPartition);
         ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
             .withBucketName(bucket)
-            .withPrefix(fileS3KeyPrefix)
+            .withPrefix(directoryPrefix)
             .withMaxKeys(maxKeys); // it's ok to pass null here
         ListObjectsV2Result listObjectsResult;
 
-        // TODO rewrite deletion w.r.t. leader epoch
+        try {
+            outer:
+            do {
+                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
 
-//        try {
-//            outer:
-//            do {
-//                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-//
-//                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
-//                    assert objectSummary.getKey().startsWith(fileS3KeyPrefix);
-//                    String keyWithoutPrefix = objectSummary.getKey().substring(fileS3KeyPrefix.length());
-//
-//                    Matcher m = LAST_MODIFIED_REVERSE_INDEX_NAME_PATTERN.matcher(keyWithoutPrefix);
-//                    if (m.matches()) {
-//                        long lastModifiedMs = Long.parseLong(m.group(1));
-//                        if (lastModifiedMs > cleanUpTillMs) {
-//                            break outer;
-//                        }
-//                        long baseOffset = Long.parseLong(m.group(2));
-//                        long lastOffset = Long.parseLong(m.group(3));
-//
-//                        String[] keysToDelete = new String[]{
-//                            S3RemoteStorageManager.logFileKey(topicPartition, baseOffset, lastOffset),
-//                            S3RemoteStorageManager.offsetIndexFileKey(topicPartition, baseOffset, lastOffset),
-//                            S3RemoteStorageManager.timestampIndexFileKey(topicPartition, baseOffset, lastOffset),
-//                            objectSummary.getKey(),
-//                            S3RemoteStorageManager.remoteLogIndexFileKey(topicPartition, baseOffset, lastOffset),
-//                            S3RemoteStorageManager.markerFileKey(topicPartition, baseOffset, lastOffset)
-//                        };
-//                        DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
-//                            .withKeys(keysToDelete);
-//                        s3Client.deleteObjects(deleteObjectsRequest);
-//                    } else {
-//                        log.warn("File {} has incorrect name format, skipping", objectSummary.getKey());
-//                    }
-//                }
-//
-//                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-//            } while (listObjectsResult.isTruncated());
-//        } catch (SdkClientException e) {
-//            throw new KafkaException("Error cleaning log until " + cleanUpTillMs + " in " + topicPartition, e);
-//        }
+                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
+                    final String key = objectSummary.getKey();
+                    assert key.startsWith(directoryPrefix);
+                    LastModifiedReverseIndexEntry entry;
+                    try {
+                        entry = LastModifiedReverseIndexEntry.parse(
+                            key.substring(directoryPrefix.length())
+                        );
+                    } catch (IllegalArgumentException e) {
+                        log.warn("File {} has incorrect name format, skipping", key);
+                        continue;
+                    }
+
+                    // Rely on the key listing order.
+                    if (entry.lastModifiedMs() > cleanUpTillMs) {
+                        break outer;
+                    }
+
+                    DeleteObjectsRequest deleteMarkerRequest = new DeleteObjectsRequest(bucket)
+                        .withKeys(
+                            MarkerKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch())
+                        );
+                    s3Client.deleteObjects(deleteMarkerRequest);
+
+                    DeleteObjectsRequest deleteRestFilesRequest = new DeleteObjectsRequest(bucket)
+                        .withKeys(
+                            LogFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
+                            OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
+                            TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
+                            RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
+                            key
+                        );
+                    s3Client.deleteObjects(deleteRestFilesRequest);
+                }
+
+                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
+            } while (listObjectsResult.isTruncated());
+        } catch (SdkClientException e) {
+            throw new KafkaException("Error cleaning log until " + cleanUpTillMs + " in " + topicPartition, e);
+        }
 
         // for now, return the earliest offset after deletion.
         // TODO confirm it's the right way
@@ -528,15 +531,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         if (transferManager != null) {
             transferManager.shutdownNow(true);
         }
-    }
-
-    static String lastModifiedReverseIndexFileKey(TopicPartition topicPartition, long lastModifiedMs, long baseOffset, long lastOffset, int leaderEpoch) {
-        // TODO leader epoch must be included in the file name
-        return fileS3KeyPrefix(topicPartition, LAST_MODIFIED_REVERSE_INDEX_FILES_DIRECTORY) + "/" +
-            // Offset formatting (20 digits) is fine for timestamps too.
-            Log.filenamePrefixFromOffset(lastModifiedMs) + "-" +
-            Log.filenamePrefixFromOffset(baseOffset) + "-" +
-            Log.filenamePrefixFromOffset(lastOffset) + "-le" + leaderEpoch;
     }
 
     private static String fileS3KeyPrefix(TopicPartition topicPartition, String directory) {

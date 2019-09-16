@@ -29,6 +29,7 @@ import java.util.concurrent.CancellationException;
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.rsm.s3.keys.LastModifiedReverseIndexKey;
 import org.apache.kafka.rsm.s3.keys.LogFileKey;
 import org.apache.kafka.rsm.s3.keys.MarkerKey;
 import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
@@ -161,7 +162,7 @@ class TopicPartitionCopying {
     }
 
     private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) {
-        String key = S3RemoteStorageManager.lastModifiedReverseIndexFileKey(
+        String key = LastModifiedReverseIndexKey.key(
             topicPartition, logSegment.lastModified(), baseOffset, lastOffset, leaderEpoch);
         return uploadEmptyFile(key);
     }
