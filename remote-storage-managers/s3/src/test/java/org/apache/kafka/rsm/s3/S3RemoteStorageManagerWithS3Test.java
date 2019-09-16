@@ -429,6 +429,29 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     }
 
     @Test
+    public void testListRemoteSegmentsWithMultipleLeaderEpochs() throws IOException {
+        remoteStorageManager.configure(basicProps(bucket));
+
+        int recordsInSegment = 20;
+        int numSegments = 10;
+        for (int i = 0; i < numSegments; i++) {
+            int offset = recordsInSegment * i;
+            LogSegment segment = createLogSegment(offset);
+            appendRecordBatch(segment, offset, 100, recordsInSegment);
+            segment.onBecomeInactiveSegment();
+            remoteStorageManager.copyLogSegment(TP0, segment,0);
+            remoteStorageManager.copyLogSegment(TP0, segment,1);
+        }
+        List<RemoteLogSegmentInfo> allRemoteSegments = remoteStorageManager.listRemoteSegments(TP0);
+        assertEquals(numSegments, allRemoteSegments.size());
+        for (int i = 0; i < numSegments; i++) {
+            RemoteLogSegmentInfo segment = allRemoteSegments.get(i);
+            assertEquals(recordsInSegment * i, segment.baseOffset());
+            assertEquals(recordsInSegment * (i + 1) - 1, segment.endOffset());
+        }
+    }
+
+    @Test
     public void testListRemoteSegmentsDoesNotListSegmentsWithoutMarker() throws IOException {
         remoteStorageManager.configure(basicProps(bucket));
 
