@@ -112,13 +112,23 @@ class TopicPartitionCopying {
                     throwSegmentCopyingInterruptedException(null);
                 }
 
+                Upload lastModifiedReverseIndexFileUpload = uploadLastModifiedReverseIndexFile(logSegment);
+                uploads = Collections.singletonList(lastModifiedReverseIndexFileUpload);
+            }
+
+            waitForAllUploads();
+
+            synchronized(lock) {
+                if (cancelled) {
+                    throwSegmentCopyingInterruptedException(null);
+                }
+
                 Upload logFileUpload = uploadLogFile(logSegment);
                 Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
                 Upload timeIndexFileUpload = uploadTimeIndexLogFile(logSegment);
-                Upload largestTimestampReverseIndexFile = uploadLastModifiedReverseIndexFile(logSegment);
                 Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
                 uploads = Arrays.asList(
-                    logFileUpload, offsetIndexFileUpload, timeIndexFileUpload, largestTimestampReverseIndexFile, remoteLogIndexUpload
+                    logFileUpload, offsetIndexFileUpload, timeIndexFileUpload, remoteLogIndexUpload
                 );
             }
 
