@@ -7,25 +7,25 @@ final class Marker {
     private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d+)");
 
     private final long baseOffset;
-    private final long endOffset;
+    private final long lastOffset;
     private final int leaderEpoch;
 
     private final OffsetPair offsetPair;
 
-    private Marker(long baseOffset, long endOffset, int leaderEpoch) {
+    private Marker(long baseOffset, long lastOffset, int leaderEpoch) {
         this.baseOffset = baseOffset;
-        this.endOffset = endOffset;
+        this.lastOffset = lastOffset;
         this.leaderEpoch = leaderEpoch;
 
-        this.offsetPair = new OffsetPair(baseOffset, endOffset);
+        this.offsetPair = new OffsetPair(baseOffset, lastOffset);
     }
 
     public long baseOffset() {
         return baseOffset;
     }
 
-    public long endOffset() {
-        return endOffset;
+    public long lastOffset() {
+        return lastOffset;
     }
 
     public int leaderEpoch() {

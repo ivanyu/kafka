@@ -8,13 +8,13 @@ public class LastModifiedReverseIndexEntry {
 
     private final long lastModifiedMs;
     private final long baseOffset;
-    private final long endOffset;
+    private final long lastOffset;
     private final int leaderEpoch;
 
-    public LastModifiedReverseIndexEntry(long lastModifiedMs, long baseOffset, long endOffset, int leaderEpoch) {
+    public LastModifiedReverseIndexEntry(long lastModifiedMs, long baseOffset, long lastOffset, int leaderEpoch) {
         this.lastModifiedMs = lastModifiedMs;
         this.baseOffset = baseOffset;
-        this.endOffset = endOffset;
+        this.lastOffset = lastOffset;
         this.leaderEpoch = leaderEpoch;
     }
 
@@ -26,8 +26,8 @@ public class LastModifiedReverseIndexEntry {
         return baseOffset;
     }
 
-    public long endOffset() {
-        return endOffset;
+    public long lastOffset() {
+        return lastOffset;
     }
 
     public int leaderEpoch() {
