@@ -1,24 +1,22 @@
 package org.apache.kafka.rsm.s3;
 
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 final class OffsetPair {
     private final long baseOffset;
-    private final long endOffset;
+    private final long lastOffset;
 
-        OffsetPair(long baseOffset, long endOffset) {
+        OffsetPair(long baseOffset, long lastOffset) {
         this.baseOffset = baseOffset;
-        this.endOffset = endOffset;
+        this.lastOffset = lastOffset;
     }
 
     public long baseOffset() {
         return baseOffset;
     }
 
-    public long endOffset() {
-        return endOffset;
+    public long lastOffset() {
+        return lastOffset;
     }
 
     @Override
@@ -31,11 +29,11 @@ final class OffsetPair {
         }
         OffsetPair that = (OffsetPair) o;
         return baseOffset == that.baseOffset &&
-            endOffset == that.endOffset;
+            lastOffset == that.lastOffset;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(baseOffset, endOffset);
+        return Objects.hash(baseOffset, lastOffset);
     }
 }

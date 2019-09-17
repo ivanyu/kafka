@@ -82,10 +82,10 @@ import scala.collection.JavaConverters;
 //  - leader epoch and their priority
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
-    // TODO log
+    // TODO log (including other files)
+    private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
 
     // TODO common prefix
-
     // TODO migration test
 
     // TODO handle the situation with several leader epochs, test it
@@ -93,10 +93,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     // TODO handle concurrent cleaning and deletion (leader epochs)
 
     // TODO should path be added to RDI? (because of segment info)
-
-    // TODO end offset vs last offset naming
-
-    private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
 
     // for testing
     private Integer maxKeys = null;
@@ -250,7 +246,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                     // One offset pair may appear in different leader epochs, need to prevent duplication.
                     if (!seenOffsetPairs.contains(marker.offsetPair())) {
                         RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
-                            marker.baseOffset(), marker.endOffset(), topicPartition,
+                            marker.baseOffset(), marker.lastOffset(), topicPartition, marker.leaderEpoch(),
                             Collections.emptyMap());
                         result.add(segment);
                         seenOffsetPairs.add(marker.offsetPair());
@@ -362,6 +358,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         .toArray(String[]::new);
                     DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
                         .withKeys(keysToDelete);
+                    // TODO handle MultiObjectDeleteException
                     s3Client.deleteObjects(deleteObjectsRequest);
                 }
             } while (!listObjectsResult.getObjectSummaries().isEmpty());
@@ -410,18 +407,20 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
                     DeleteObjectsRequest deleteMarkerRequest = new DeleteObjectsRequest(bucket)
                         .withKeys(
-                            MarkerKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch())
+                            MarkerKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch())
                         );
+                    // TODO handle MultiObjectDeleteException
                     s3Client.deleteObjects(deleteMarkerRequest);
 
                     DeleteObjectsRequest deleteRestFilesRequest = new DeleteObjectsRequest(bucket)
                         .withKeys(
-                            LogFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
-                            OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
-                            TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
-                            RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.endOffset(), entry.leaderEpoch()),
+                            LogFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
+                            OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
+                            TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
+                            RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
                             key
                         );
+                    // TODO handle MultiObjectDeleteException
                     s3Client.deleteObjects(deleteRestFilesRequest);
                 }
 
@@ -540,10 +539,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         if (transferManager != null) {
             transferManager.shutdownNow(true);
         }
-    }
-
-    private static String fileS3KeyPrefix(TopicPartition topicPartition, String directory) {
-        return topicPartitionDirectory(topicPartition) + directory;
     }
 
     private static String topicPartitionDirectory(TopicPartition topicPartition) {

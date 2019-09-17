@@ -469,7 +469,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         deleteMarker(0, 9, leaderEpoch);
 
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            1 * recordsInSegment, recordsInSegment * 2 - 1, TP0, Collections.emptyMap());
+            1 * recordsInSegment, recordsInSegment * 2 - 1, TP0, leaderEpoch, Collections.emptyMap());
         assertThat(
             remoteStorageManager.listRemoteSegments(TP0),
             containsInAnyOrder(segmentInfo)
@@ -487,7 +487,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     public void testGetRemoteLogIndexEntries() throws IOException {
         SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, 0, true);
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition, 0,
             Collections.emptyMap());
         List<RemoteLogIndexEntry> result = remoteStorageManager.getRemoteLogIndexEntries(segmentInfo);
         assertEquals(segmentOnS3Setup.remoteLogIndexEntries, result);
@@ -500,7 +500,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         deleteMarker(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.leaderEpoch);
 
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition, 0,
             Collections.emptyMap());
         Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
         assertEquals("Marker for " + segmentInfo + " doesn't exist", e.getMessage());
@@ -513,7 +513,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         deleteRemoteLogIndexFile(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.leaderEpoch);
 
         RemoteLogSegmentInfo segmentInfo = new RemoteLogSegmentInfo(
-            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition,
+            segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.topicPartition, 0,
             Collections.emptyMap());
         Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.getRemoteLogIndexEntries(segmentInfo));
         assertEquals(
