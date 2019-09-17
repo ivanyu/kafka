@@ -52,7 +52,6 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.testcontainers.containers.localstack.LocalStackContainer.Service.S3;
@@ -266,7 +265,9 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     public void testCleanupLogAfterAllSegments() throws IOException {
         final SegmentOnS3Setup segmentOnS3Setup1 = uploadSegment(0, 0, true);
         final SegmentOnS3Setup segmentOnS3Setup2 = uploadSegment(0, 1000, false);
-        assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup2.segment.lastModified() + 1));
+        final SegmentOnS3Setup segmentOnS3Setup3 = uploadSegment(0, 2000, false);
+        final SegmentOnS3Setup segmentOnS3Setup4 = uploadSegment(0, 4000, false);
+        assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup4.segment.lastModified() + 1));
         assertThat(listS3Keys(), empty());
     }
 

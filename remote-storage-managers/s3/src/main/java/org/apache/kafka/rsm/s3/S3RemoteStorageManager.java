@@ -20,6 +20,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -30,6 +32,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
@@ -80,6 +83,7 @@ import scala.collection.JavaConverters;
 //  - migration (moving files and everything should work)
 //  - reliance on the lexicographical order of list
 //  - leader epoch and their priority
+//  - marker, reverse index, data file upload and delete order.
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO log (including other files)
@@ -87,12 +91,11 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO common prefix
     // TODO migration test
+    // TODO should path be added to RDI? (because of segment info)
 
     // TODO handle the situation with several leader epochs, test it
 
     // TODO handle concurrent cleaning and deletion (leader epochs)
-
-    // TODO should path be added to RDI? (because of segment info)
 
     // for testing
     private Integer maxKeys = null;
@@ -340,28 +343,27 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public boolean deleteTopicPartition(TopicPartition topicPartition) {
-        // TODO async deletion (delete marker + background task). Don't forget to handle delete-and-recreate scenario.
-
         ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
             .withBucketName(bucket)
             .withPrefix(topicPartitionDirectory(topicPartition))
             .withMaxKeys(maxKeys);  // it's ok to pass null here
 
-        ListObjectsV2Result listObjectsResult;
         try {
+            List<String> keysToDelete = new ArrayList<>();
+
+            ListObjectsV2Result listObjectsResult;
             do {
                 // TODO validate this from the read-after-delete point of view
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-                if (!listObjectsResult.getObjectSummaries().isEmpty()) {
-                    String[] keysToDelete = listObjectsResult.getObjectSummaries().stream()
+                keysToDelete.addAll(
+                    listObjectsResult.getObjectSummaries().stream()
                         .map(S3ObjectSummary::getKey)
-                        .toArray(String[]::new);
-                    DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
-                        .withKeys(keysToDelete);
-                    // TODO handle MultiObjectDeleteException
-                    s3Client.deleteObjects(deleteObjectsRequest);
-                }
-            } while (!listObjectsResult.getObjectSummaries().isEmpty());
+                        .collect(Collectors.toList())
+                );
+                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
+            } while (listObjectsResult.isTruncated());
+
+            deleteKeys(keysToDelete);
         } catch (SdkClientException e) {
             throw new KafkaException("Error deleting " + topicPartition, e);
         }
@@ -371,18 +373,25 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public long cleanupLogUntil(TopicPartition topicPartition, long cleanUpTillMs) throws IOException {
-        // TODO async deletion (delete marker + background task). Don't forget to handle delete-and-recreate scenario.
-        // TODO collect, delete markers, delete the rest
-        // TODO handle failure-resume (probably, related to async deletion).
-
         String directoryPrefix = LastModifiedReverseIndexKey.directoryPrefix(topicPartition);
         ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
             .withBucketName(bucket)
             .withPrefix(directoryPrefix)
             .withMaxKeys(maxKeys); // it's ok to pass null here
-        ListObjectsV2Result listObjectsResult;
+
+        // TODO test interrupted cleanup.
 
         try {
+            // Deletion order:
+            // 1. Markers (makes segment unavailable for other operations).
+            // 2. Data.
+            // 3. Last modified reverse index entries (needs to be in the end to enable retrying an interrupted cleanup).
+
+            List<String> markers = new ArrayList<>();
+            List<String> dataFiles = new ArrayList<>();
+            List<String> lastModifiedReverseIndexEntries = new ArrayList<>();
+
+            ListObjectsV2Result listObjectsResult;
             outer:
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
@@ -405,27 +414,19 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         break outer;
                     }
 
-                    DeleteObjectsRequest deleteMarkerRequest = new DeleteObjectsRequest(bucket)
-                        .withKeys(
-                            MarkerKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch())
-                        );
-                    // TODO handle MultiObjectDeleteException
-                    s3Client.deleteObjects(deleteMarkerRequest);
-
-                    DeleteObjectsRequest deleteRestFilesRequest = new DeleteObjectsRequest(bucket)
-                        .withKeys(
-                            LogFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
-                            OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
-                            TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
-                            RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()),
-                            key
-                        );
-                    // TODO handle MultiObjectDeleteException
-                    s3Client.deleteObjects(deleteRestFilesRequest);
+                    markers.add(MarkerKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
+                    dataFiles.add(LogFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
+                    dataFiles.add(OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
+                    dataFiles.add(TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
+                    dataFiles.add(RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
+                    lastModifiedReverseIndexEntries.add(key);
                 }
-
                 listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
             } while (listObjectsResult.isTruncated());
+
+            deleteKeys(markers);
+            deleteKeys(dataFiles);
+            deleteKeys(lastModifiedReverseIndexEntries);
         } catch (SdkClientException e) {
             throw new KafkaException("Error cleaning log until " + cleanUpTillMs + " in " + topicPartition, e);
         }
@@ -435,11 +436,44 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         return earliestLogOffset(topicPartition);
     }
 
+    private void deleteKeys(Collection<String> keys) {
+        List<List<String>> chunks = new ArrayList<>();
+        chunks.add(new ArrayList<>());
+
+        for (String key : keys) {
+            List<String> lastChunk = chunks.get(chunks.size() - 1);
+            if (lastChunk.size() >= 1000) {
+                lastChunk = new ArrayList<>();
+                chunks.add(lastChunk);
+            }
+            lastChunk.add(key);
+        }
+
+        for (List<String> chunk : chunks) {
+            assert chunk.size() <= 1000;
+
+            final String[] chunkArray = chunk.toArray(new String[]{});
+            log.trace("Deleting keys {}", Arrays.toString(chunkArray));
+            DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
+                .withKeys(chunkArray);
+            // TODO handle MultiObjectDeleteException (log? retry?)
+            try {
+                s3Client.deleteObjects(deleteObjectsRequest);
+            } catch (SdkClientException e) {
+                throw new KafkaException("Error deleting keys " + Arrays.toString(chunkArray), e);
+            }
+        }
+    }
+
     @Override
     public Records read(RemoteLogIndexEntry remoteLogIndexEntry,
                         int maxBytes,
                         long startOffset,
                         boolean minOneMessage) throws IOException {
+
+        // TODO what to return in case nothing exists for this offset?
+        // TODO test when segments marked for deletion
+
         if (startOffset > remoteLogIndexEntry.lastOffset()) {
             throw new IllegalArgumentException("startOffset > remoteLogIndexEntry.lastOffset(): "
                 + startOffset + " > " + remoteLogIndexEntry.lastOffset());
