@@ -415,7 +415,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         for (int i = 0; i < numSegments; i++) {
             RemoteLogSegmentInfo segment = allRemoteSegments.get(i);
             assertEquals(recordsInSegment * i, segment.baseOffset());
-            assertEquals(recordsInSegment * (i + 1) - 1, segment.endOffset());
+            assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
         }
 
         int numSkippedSegments = 5;
@@ -425,7 +425,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         for (int i = numSkippedSegments; i < numSegments; i++) {
             RemoteLogSegmentInfo segment = partialRemoteSegments.get(i - numSkippedSegments);
             assertEquals(recordsInSegment * i, segment.baseOffset());
-            assertEquals(recordsInSegment * (i + 1) - 1, segment.endOffset());
+            assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
         }
     }
 
@@ -448,7 +448,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         for (int i = 0; i < numSegments; i++) {
             RemoteLogSegmentInfo segment = allRemoteSegments.get(i);
             assertEquals(recordsInSegment * i, segment.baseOffset());
-            assertEquals(recordsInSegment * (i + 1) - 1, segment.endOffset());
+            assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
         }
     }
 

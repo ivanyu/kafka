@@ -272,16 +272,15 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public List<RemoteLogIndexEntry> getRemoteLogIndexEntries(RemoteLogSegmentInfo remoteLogSegment) throws IOException {
-        TopicPartition topicPartition = remoteLogSegment.topicPartition();
-        long baseOffset = remoteLogSegment.baseOffset();
-        long lastOffset = remoteLogSegment.endOffset();
-
-        final Optional<Marker> marker = getMarker(topicPartition, baseOffset, lastOffset);
+        final Optional<Marker> marker = getMarker(
+            remoteLogSegment.topicPartition(), remoteLogSegment.baseOffset(), remoteLogSegment.lastOffset());
         if (!marker.isPresent()) {
             throw new KafkaException("Marker for " + remoteLogSegment + " doesn't exist");
         }
 
-        String remoteLogIndexFileKey = RemoteLogIndexFileKey.key(topicPartition, baseOffset, lastOffset, marker.get().leaderEpoch());
+        String remoteLogIndexFileKey = RemoteLogIndexFileKey.key(
+            remoteLogSegment.topicPartition(), remoteLogSegment.baseOffset(), remoteLogSegment.lastOffset(),
+            marker.get().leaderEpoch());
         try (S3Object s3Object = s3Client.getObject(bucket, remoteLogIndexFileKey);
              S3ObjectInputStream is = s3Object.getObjectContent()) {
 
