@@ -354,7 +354,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
       .getOrElse(throw new OffsetOutOfRangeException(
         s"Received request for offset $offset for partition $tp, which does not exist in remote tier"))
 
-    val records = remoteStorageManager.read(entry, fetchInfo.maxBytes, offset, minOneMessage)
+    val records = remoteStorageManager.read(tp, entry, fetchInfo.maxBytes, offset, minOneMessage)
 
     FetchDataInfo(LogOffsetMetadata(offset), records)
   }
