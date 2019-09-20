@@ -113,8 +113,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private final ConcurrentHashMap<TopicPartition, TopicPartitionCopying> ongoingCopyings = new ConcurrentHashMap<>();
 
-    private final ThreadLocal<BufferSupplier> decompressionBufferSupplier = ThreadLocal.withInitial(BufferSupplier::create);
-
     public S3RemoteStorageManager() {
     }
 
