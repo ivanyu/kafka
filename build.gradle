@@ -1848,42 +1848,6 @@ project(':remote-storage-managers:s3') {
   }
 }
 
-project(':remote-storage-managers:gcs') {
-  archivesBaseName = "kafka-rsm-gcs"
-
-  dependencies {
-    compile group: 'com.google.cloud', name: 'google-cloud-storage', version: '1.89.0'
-    compile project(':core')
-    compile project(':remote-storage-managers:s3')
-
-    testCompile libs.junit
-    testCompile project(':core')
-    testCompile project(':core').sourceSets.test.output
-    testCompile project(':clients').sourceSets.test.output
-    testCompile libs.easymock
-    testCompile libs.powermockJunit4
-    testCompile libs.powermockEasymock
-    testCompile libs.hamcrest
-    testRuntime libs.slf4jlog4j
-  }
-
-  tasks.create(name: "copyDependantLibs", type: Copy) {
-    from(configurations.runtime) {
-      exclude('kafka-rsm-gcs*')
-    }
-    into "$buildDir/dependant-libs-${versions.scala}"
-    duplicatesStrategy 'exclude'
-  }
-
-  jar {
-    dependsOn copyDependantLibs
-  }
-
-  javadoc {
-    enabled = false
-  }
-}
-
 task aggregatedJavadoc(type: Javadoc) {
   def projectsWithJavadoc = subprojects.findAll { it.javadoc.enabled }
   source = projectsWithJavadoc.collect { it.sourceSets.main.allJava }
