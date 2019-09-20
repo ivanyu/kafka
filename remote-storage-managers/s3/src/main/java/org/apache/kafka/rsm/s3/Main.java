@@ -136,7 +136,7 @@ public class Main {
             }
         }
         
-        Records records = rsm.read(firstRemoteLogIndexEntry, 10000000, 4, true);
+        Records records = rsm.read(tp, firstRemoteLogIndexEntry, 10000000, 4, true);
         System.out.println(records);
 
         List<RemoteLogSegmentInfo> remoteSegmentInfos = rsm.listRemoteSegments(tp);

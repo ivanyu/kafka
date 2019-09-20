@@ -471,7 +471,8 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     }
 
     @Override
-    public Records read(RemoteLogIndexEntry remoteLogIndexEntry,
+    public Records read(TopicPartition topicPartition,
+                        RemoteLogIndexEntry remoteLogIndexEntry,
                         int maxBytes,
                         long startOffset,
                         boolean minOneMessage) throws IOException {
