@@ -59,6 +59,7 @@ import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.ListObjectsV2Request;
 import com.amazonaws.services.s3.model.ListObjectsV2Result;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
@@ -455,9 +456,16 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             log.trace("Deleting keys {}", Arrays.toString(chunkArray));
             DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
                 .withKeys(chunkArray);
-            // TODO handle MultiObjectDeleteException (log? retry?)
             try {
                 s3Client.deleteObjects(deleteObjectsRequest);
+            } catch (MultiObjectDeleteException e) {
+                // On an attempt to delete a non-existent key, real S3 will return no error,
+                // but Localstack (used for testing) will. This effectively handles errors that
+                // appear only in tests with Localstack.
+                // TODO not needed if we switch to integration testing with real S3.
+                for (MultiObjectDeleteException.DeleteError error : e.getErrors()) {
+                    log.warn("Error deleting key {}: {} {}", error.getKey(), error.getCode(), error.getMessage());
+                }
             } catch (SdkClientException e) {
                 throw new KafkaException("Error deleting keys " + Arrays.toString(chunkArray), e);
             }
