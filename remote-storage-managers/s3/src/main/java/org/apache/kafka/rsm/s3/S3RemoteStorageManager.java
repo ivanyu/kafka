@@ -87,8 +87,6 @@ import scala.collection.JavaConverters;
 //  - marker, reverse index, data file upload and delete order.
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
-    // TODO bucket migration test
-
     // TODO handle the situation with several leader epochs, test it
 
     // TODO handle concurrent cleaning and deletion (leader epochs)

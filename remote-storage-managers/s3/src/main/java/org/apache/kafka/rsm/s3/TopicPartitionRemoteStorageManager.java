@@ -490,7 +490,7 @@ public class TopicPartitionRemoteStorageManager {
 
         // TODO what if dataLength() is incorrect? (what happens when range request is longer than data?)
         GetObjectRequest getRequest = new GetObjectRequest(bucket, s3Key)
-            .withRange(position, remoteLogIndexEntry.dataLength());
+            .withRange(position, position + remoteLogIndexEntry.dataLength());
         try (S3Object s3Object = s3Client.getObject(getRequest);
              S3ObjectInputStream is = s3Object.getObjectContent()) {
             ByteBuffer buffer = ByteBuffer.allocate(((Long)s3Object.getObjectMetadata().getContentLength()).intValue());
