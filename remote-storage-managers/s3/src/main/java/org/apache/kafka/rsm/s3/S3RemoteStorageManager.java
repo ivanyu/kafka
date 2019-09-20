@@ -87,12 +87,7 @@ import scala.collection.JavaConverters;
 //  - marker, reverse index, data file upload and delete order.
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
-    // TODO log (including other files)
-    private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
-
-    // TODO common prefix
-    // TODO migration test
-    // TODO should path be added to RDI? (because of segment info)
+    // TODO bucket migration test
 
     // TODO handle the situation with several leader epochs, test it
 
@@ -108,10 +103,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private int indexIntervalBytes;
 
-    static final String RDI_POSITION_SEPARATOR = "#";
-    private static final Pattern RDI_PATTERN = Pattern.compile("(.*)" + RDI_POSITION_SEPARATOR + "(\\d+)");
-
-    private final ConcurrentHashMap<TopicPartition, TopicPartitionCopying> ongoingCopyings = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<TopicPartition, TopicPartitionRemoteStorageManager> topicPartitionManagers = new ConcurrentHashMap<>();
 
     public S3RemoteStorageManager() {
     }
@@ -145,66 +137,19 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public long earliestLogOffset(TopicPartition tp) throws IOException {
-        String directoryPrefix = MarkerKey.directoryPrefix(tp);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
-        ListObjectsV2Result listObjectsResult;
-
-        try {
-            do {
-                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-
-                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
-                    String key = objectSummary.getKey();
-                    assert key.startsWith(directoryPrefix);
-                    try {
-                        Marker marker = Marker.parse(key.substring(directoryPrefix.length()));
-                        return marker.baseOffset();
-                    } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
-                    }
-                }
-
-                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-            } while (listObjectsResult.isTruncated());
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error finding earliest offset in " + tp, e);
-        }
-
-        return -1L;
+        return topicPartitionManager(tp).earliestLogOffset();
     }
 
     @Override
     public List<RemoteLogIndexEntry> copyLogSegment(TopicPartition topicPartition,
                                                     LogSegment logSegment,
                                                     int leaderEpoch) throws IOException {
-
-        // TODO concurrent upload among several brokers - document, etc
-        // TODO don't copy if marker exists
-
-        // There are no concurrent calls per topic-partition.
-        if (ongoingCopyings.containsKey(topicPartition)) {
-            throw new IllegalStateException("Already ongoing copying for " + topicPartition);
-        }
-
-        TopicPartitionCopying copying = new TopicPartitionCopying(
-            leaderEpoch, topicPartition, logSegment, bucket, transferManager, indexIntervalBytes);
-        ongoingCopyings.put(topicPartition, copying);
-        try {
-            return copying.copy();
-        } finally {
-            ongoingCopyings.remove(topicPartition);
-        }
+        return topicPartitionManager(topicPartition).copyLogSegment(logSegment, leaderEpoch);
     }
 
     @Override
     public void cancelCopyingLogSegment(TopicPartition topicPartition) {
-        TopicPartitionCopying copying = ongoingCopyings.remove(topicPartition);
-        if (copying != null) {
-            copying.cancel();
-        }
+        topicPartitionManager(topicPartition).cancelCopyingLogSegment();
     }
 
     @Override
@@ -214,79 +159,12 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public List<RemoteLogSegmentInfo> listRemoteSegments(TopicPartition topicPartition, long minBaseOffset) throws IOException {
-        String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
-        String startAfterKey = MarkerKey.baseOffsetPrefix(topicPartition, minBaseOffset);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys) // it's ok to pass null here
-            .withStartAfter(startAfterKey);
-        ListObjectsV2Result listObjectsResult;
-
-        List<RemoteLogSegmentInfo> result = new ArrayList<>();
-        Set<OffsetPair> seenOffsetPairs = new HashSet<>();
-        try {
-            do {
-                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-
-                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
-                    String key = objectSummary.getKey();
-                    assert key.startsWith(directoryPrefix);
-                    Marker marker;
-                    try {
-                        marker = Marker.parse(key.substring(directoryPrefix.length()));
-                    } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
-                        continue;
-                    }
-
-                    if (marker.baseOffset() < minBaseOffset) {
-                        log.warn("Requested files starting from key {}, but got {}", startAfterKey, key);
-                    }
-                    assert marker.baseOffset() >= minBaseOffset;
-
-                    // One offset pair may appear in different leader epochs, need to prevent duplication.
-                    if (!seenOffsetPairs.contains(marker.offsetPair())) {
-                        RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
-                            marker.baseOffset(), marker.lastOffset(), topicPartition, marker.leaderEpoch(),
-                            Collections.emptyMap());
-                        result.add(segment);
-                        seenOffsetPairs.add(marker.offsetPair());
-                    }
-                }
-
-                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-            } while (listObjectsResult.isTruncated());
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error listing remote segments in " + topicPartition + " with min base offset " + minBaseOffset, e);
-        }
-
-        // No need to explicitly sort the result on our side.
-        // According to the AWS documentation (https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html),
-        // "Amazon S3 lists objects in UTF-8 character encoding in lexicographical order."
-        // Of course, it's safer just to sort. However, we rely on this ordering pretty heavily in other parts
-        // and if it's broken in AWS for some reason the whole implementation is broken anyway.
-        return result;
+        return topicPartitionManager(topicPartition).listRemoteSegments(minBaseOffset);
     }
 
     @Override
     public List<RemoteLogIndexEntry> getRemoteLogIndexEntries(RemoteLogSegmentInfo remoteLogSegment) throws IOException {
-        final Optional<Marker> marker = getMarker(
-            remoteLogSegment.topicPartition(), remoteLogSegment.baseOffset(), remoteLogSegment.lastOffset());
-        if (!marker.isPresent()) {
-            throw new KafkaException("Marker for " + remoteLogSegment + " doesn't exist");
-        }
-
-        String remoteLogIndexFileKey = RemoteLogIndexFileKey.key(
-            remoteLogSegment.topicPartition(), remoteLogSegment.baseOffset(), remoteLogSegment.lastOffset(),
-            marker.get().leaderEpoch());
-        try (S3Object s3Object = s3Client.getObject(bucket, remoteLogIndexFileKey);
-             S3ObjectInputStream is = s3Object.getObjectContent()) {
-
-            return JavaConverters.seqAsJavaList(RemoteLogIndexEntry.readAll(is));
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error reading remote log index file " + remoteLogIndexFileKey, e);
-        }
+        return topicPartitionManager(remoteLogSegment.topicPartition()).getRemoteLogIndexEntries(remoteLogSegment);
     }
 
     @Override
@@ -295,179 +173,14 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         throw new RuntimeException("not implemented");
     }
 
-    /**
-     * Returns a marker for the specified {@code topicPartition}, {@code baseOffset}, and {@code lastOffset}.
-     *
-     * <p>In case there are several markers for them (different leader epochs), the method will return the one with
-     * the lowest leader epoch.
-     * @return a marker if it exists.
-     */
-    private Optional<Marker> getMarker(TopicPartition topicPartition, long baseOffset, long lastOffset) {
-        final String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
-
-        String fileS3KeyPrefix = MarkerKey.keyPrefixWithoutLeaderEpochNumber(topicPartition, baseOffset, lastOffset);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(fileS3KeyPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
-        ListObjectsV2Result listObjectsResult;
-
-        try {
-            do {
-                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-
-                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
-                    final String key = objectSummary.getKey();
-                    assert key.startsWith(directoryPrefix);
-                    assert key.startsWith(fileS3KeyPrefix);
-
-                    try {
-                        return Optional.of(
-                            Marker.parse(key.substring(directoryPrefix.length()))
-                        );
-                    } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
-                    }
-                }
-
-                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-            } while (listObjectsResult.isTruncated());
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error getting marker in " + topicPartition + " with base offset " + baseOffset + " and last offset " + lastOffset, e);
-        }
-
-        return Optional.empty();
-    }
-
     @Override
     public boolean deleteTopicPartition(TopicPartition topicPartition) {
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(topicPartitionDirectory(topicPartition))
-            .withMaxKeys(maxKeys);  // it's ok to pass null here
-
-        try {
-            List<String> keysToDelete = new ArrayList<>();
-
-            ListObjectsV2Result listObjectsResult;
-            do {
-                // TODO validate this from the read-after-delete point of view
-                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-                keysToDelete.addAll(
-                    listObjectsResult.getObjectSummaries().stream()
-                        .map(S3ObjectSummary::getKey)
-                        .collect(Collectors.toList())
-                );
-                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-            } while (listObjectsResult.isTruncated());
-
-            deleteKeys(keysToDelete);
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error deleting " + topicPartition, e);
-        }
-
-        return false; // TODO what to return?
+        return topicPartitionManager(topicPartition).deleteTopicPartition();
     }
 
     @Override
     public long cleanupLogUntil(TopicPartition topicPartition, long cleanUpTillMs) throws IOException {
-        String directoryPrefix = LastModifiedReverseIndexKey.directoryPrefix(topicPartition);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
-
-        // TODO test interrupted cleanup.
-
-        try {
-            // Deletion order:
-            // 1. Markers (makes segment unavailable for other operations).
-            // 2. Data.
-            // 3. Last modified reverse index entries (needs to be in the end to enable retrying an interrupted cleanup).
-
-            List<String> markers = new ArrayList<>();
-            List<String> dataFiles = new ArrayList<>();
-            List<String> lastModifiedReverseIndexEntries = new ArrayList<>();
-
-            ListObjectsV2Result listObjectsResult;
-            outer:
-            do {
-                listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
-
-                for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
-                    final String key = objectSummary.getKey();
-                    assert key.startsWith(directoryPrefix);
-                    LastModifiedReverseIndexEntry entry;
-                    try {
-                        entry = LastModifiedReverseIndexEntry.parse(
-                            key.substring(directoryPrefix.length())
-                        );
-                    } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
-                        continue;
-                    }
-
-                    // Rely on the key listing order.
-                    if (entry.lastModifiedMs() > cleanUpTillMs) {
-                        break outer;
-                    }
-
-                    markers.add(MarkerKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
-                    dataFiles.add(LogFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
-                    dataFiles.add(OffsetIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
-                    dataFiles.add(TimeIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
-                    dataFiles.add(RemoteLogIndexFileKey.key(topicPartition, entry.baseOffset(), entry.lastOffset(), entry.leaderEpoch()));
-                    lastModifiedReverseIndexEntries.add(key);
-                }
-                listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
-            } while (listObjectsResult.isTruncated());
-
-            deleteKeys(markers);
-            deleteKeys(dataFiles);
-            deleteKeys(lastModifiedReverseIndexEntries);
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error cleaning log until " + cleanUpTillMs + " in " + topicPartition, e);
-        }
-
-        // for now, return the earliest offset after deletion.
-        // TODO confirm it's the right way
-        return earliestLogOffset(topicPartition);
-    }
-
-    private void deleteKeys(Collection<String> keys) {
-        List<List<String>> chunks = new ArrayList<>();
-        chunks.add(new ArrayList<>());
-
-        for (String key : keys) {
-            List<String> lastChunk = chunks.get(chunks.size() - 1);
-            if (lastChunk.size() >= 1000) {
-                lastChunk = new ArrayList<>();
-                chunks.add(lastChunk);
-            }
-            lastChunk.add(key);
-        }
-
-        for (List<String> chunk : chunks) {
-            assert chunk.size() <= 1000;
-
-            final String[] chunkArray = chunk.toArray(new String[]{});
-            log.trace("Deleting keys {}", Arrays.toString(chunkArray));
-            DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
-                .withKeys(chunkArray);
-            try {
-                s3Client.deleteObjects(deleteObjectsRequest);
-            } catch (MultiObjectDeleteException e) {
-                // On an attempt to delete a non-existent key, real S3 will return no error,
-                // but Localstack (used for testing) will. This effectively handles errors that
-                // appear only in tests with Localstack.
-                // TODO not needed if we switch to integration testing with real S3.
-                for (MultiObjectDeleteException.DeleteError error : e.getErrors()) {
-                    log.warn("Error deleting key {}: {} {}", error.getKey(), error.getCode(), error.getMessage());
-                }
-            } catch (SdkClientException e) {
-                throw new KafkaException("Error deleting keys " + Arrays.toString(chunkArray), e);
-            }
-        }
+        return topicPartitionManager(topicPartition).cleanupLogUntil(cleanUpTillMs);
     }
 
     @Override
@@ -476,112 +189,22 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         int maxBytes,
                         long startOffset,
                         boolean minOneMessage) throws IOException {
-
-        // TODO what to return in case nothing exists for this offset?
-        // TODO test when segments marked for deletion
-
-        if (startOffset > remoteLogIndexEntry.lastOffset()) {
-            throw new IllegalArgumentException("startOffset > remoteLogIndexEntry.lastOffset(): "
-                + startOffset + " > " + remoteLogIndexEntry.lastOffset());
-        }
-
-        ByteBuffer buffer = readBytes(remoteLogIndexEntry);
-        MemoryRecords records = MemoryRecords.readableRecords(buffer);
-
-        int firstBatchPosition = 0;
-        RecordBatch firstBatch = null;
-        int bytesCoveredByCompleteBatches = 0;
-        
-        Iterator<MutableRecordBatch> batchIter = records.batchIterator();
-        // Find the first batch to read from.
-        while (batchIter.hasNext() && firstBatch == null) {
-            RecordBatch batch = batchIter.next();
-            if (batch.lastOffset() >= startOffset) {
-                firstBatch = batch;
-                if (bytesCoveredByCompleteBatches + firstBatch.sizeInBytes() <= maxBytes) {
-                    bytesCoveredByCompleteBatches += firstBatch.sizeInBytes();
-                }
-            } else {
-                firstBatchPosition += batch.sizeInBytes();
-            }
-        }
-
-        // TODO improve implementation and tests once contract is stable
-
-        // Count how many bytes are covered by complete batches until maxBytes is reached.
-        while (batchIter.hasNext()) {
-            RecordBatch batch = batchIter.next();
-            if (bytesCoveredByCompleteBatches + batch.sizeInBytes() > maxBytes) {
-                break;
-            }
-            bytesCoveredByCompleteBatches += batch.sizeInBytes();
-        }
-
-        assert bytesCoveredByCompleteBatches <= maxBytes;
-
-        if (bytesCoveredByCompleteBatches == 0) {
-            if (minOneMessage && firstBatch != null) {
-                Iterator<Record> iterator = firstBatch.iterator();
-                if (iterator.hasNext()) {
-                    return MemoryRecords.withRecords(
-                        firstBatch.magic(),
-                        firstBatch.baseOffset(),
-                        firstBatch.compressionType(),
-                        firstBatch.timestampType(),
-                        firstBatch.producerId(),
-                        firstBatch.producerEpoch(),
-                        firstBatch.baseSequence(),
-                        firstBatch.partitionLeaderEpoch(),
-                        firstBatch.isTransactional(),
-                        new SimpleRecord(iterator.next()));
-                } else {
-                    return MemoryRecords.EMPTY;
-                }
-            } else {
-                return MemoryRecords.EMPTY;
-            }
-        } else {
-            buffer.position(firstBatchPosition);
-            buffer.limit(firstBatchPosition + bytesCoveredByCompleteBatches);
-            return MemoryRecords.readableRecords(buffer.slice());
-        }
-    }
-
-    private ByteBuffer readBytes(RemoteLogIndexEntry remoteLogIndexEntry) throws IOException {
-        String rdi = new String(remoteLogIndexEntry.rdi(), StandardCharsets.UTF_8);
-        Matcher m = RDI_PATTERN.matcher(rdi);
-        if (!m.matches()) {
-            throw new IllegalArgumentException("Can't parse RDI: " + rdi);
-        }
-
-        String s3Key = m.group(1);
-        int position = Integer.parseInt(m.group(2));
-
-        // TODO what if dataLength() is incorrect? (what happens when range request is longer than data?)
-        GetObjectRequest getRequest = new GetObjectRequest(bucket, s3Key)
-            .withRange(position, remoteLogIndexEntry.dataLength());
-        try (S3Object s3Object = s3Client.getObject(getRequest);
-             S3ObjectInputStream is = s3Object.getObjectContent()) {
-            ByteBuffer buffer = ByteBuffer.allocate(((Long)s3Object.getObjectMetadata().getContentLength()).intValue());
-            Utils.readFully(is, buffer);
-            buffer.flip();
-            return buffer;
-        } catch (SdkClientException e) {
-            throw new KafkaException("Error reading log file " + s3Key, e);
-        }
+        return topicPartitionManager(topicPartition).read(remoteLogIndexEntry, maxBytes, startOffset, minOneMessage);
     }
 
     @Override
     public void close() {
-        // TODO cancel uploads
-        // TODO go to closed state
-        // TODO abort multipart
+        topicPartitionManagers.values().forEach(TopicPartitionRemoteStorageManager::close);
         if (transferManager != null) {
             transferManager.shutdownNow(true);
         }
     }
 
-    private static String topicPartitionDirectory(TopicPartition topicPartition) {
-        return topicPartition.toString() + "/";
+    private TopicPartitionRemoteStorageManager topicPartitionManager(TopicPartition topicPartition) {
+        return topicPartitionManagers.computeIfAbsent(topicPartition,
+            (tp) -> new TopicPartitionRemoteStorageManager(
+                tp, bucket, s3Client, transferManager, maxKeys, indexIntervalBytes
+            )
+        );
     }
 }

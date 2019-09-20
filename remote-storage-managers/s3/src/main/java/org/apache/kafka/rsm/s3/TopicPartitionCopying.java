@@ -102,7 +102,7 @@ class TopicPartitionCopying {
     }
 
     private RDI s3RDI(String s3Key, long position) {
-        return new RDI((s3Key + S3RemoteStorageManager.RDI_POSITION_SEPARATOR + position).getBytes(StandardCharsets.UTF_8));
+        return new RDI((s3Key + TopicPartitionRemoteStorageManager.RDI_POSITION_SEPARATOR + position).getBytes(StandardCharsets.UTF_8));
     }
 
     List<RemoteLogIndexEntry> copy() throws IOException {
