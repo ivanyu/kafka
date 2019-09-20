@@ -214,7 +214,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     }
 
     @Test
-    public void testCleanupLogUntilWhenEmpty() throws IOException {
+    public void testCleanupLogWhenEmpty() throws IOException {
         remoteStorageManager.configure(basicProps(bucket));
         assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, Long.MAX_VALUE));
     }
@@ -269,6 +269,27 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         final SegmentOnS3Setup segmentOnS3Setup4 = uploadSegment(0, 4000, false);
         assertEquals(-1L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup4.segment.lastModified() + 1));
         assertThat(listS3Keys(), empty());
+    }
+
+    @Test
+    public void testCleanupLogPartiallyDeletedBefore() throws IOException {
+        final SegmentOnS3Setup segmentOnS3Setup1 = uploadSegment(0, 0, true);
+        final SegmentOnS3Setup segmentOnS3Setup2 = uploadSegment(0, 1000, false);
+
+        deleteMarker(segmentOnS3Setup1.baseOffset, segmentOnS3Setup1.lastOffset, segmentOnS3Setup1.leaderEpoch);
+
+        assertEquals(1000L, remoteStorageManager.cleanupLogUntil(TP0, segmentOnS3Setup1.segment.lastModified() + 1));
+
+        // All files of the second segment must remain in place.
+        List<String> keys = listS3Keys();
+        assertThat(keys, containsInAnyOrder(
+            s3Key(TP0, "log", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch),
+            s3Key(TP0, "index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch),
+            s3Key(TP0, "time-index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch),
+            s3Key(TP0, "remote-log-index", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch),
+            lastModifiedReverseIndexS3Key(TP0, segmentOnS3Setup2.segment.lastModified(), segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch),
+            s3Key(TP0, "marker", segmentOnS3Setup2.baseOffset, segmentOnS3Setup2.lastOffset, segmentOnS3Setup2.leaderEpoch)
+        ));
     }
 
     @Test
