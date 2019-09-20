@@ -206,7 +206,7 @@ class MockRemoteStorageManager extends RemoteStorageManager {
 
   override def deleteTopicPartition(topicPartition: TopicPartition): Boolean = true
 
-  override def read(remoteLogIndexEntry: RemoteLogIndexEntry, maxBytes: Int, startOffset: Long,
+  override def read(topicPartition: TopicPartition, remoteLogIndexEntry: RemoteLogIndexEntry, maxBytes: Int, startOffset: Long,
                     minOneMessage: Boolean): Records = MemoryRecords.EMPTY
 
   override def close(): Unit = {}
