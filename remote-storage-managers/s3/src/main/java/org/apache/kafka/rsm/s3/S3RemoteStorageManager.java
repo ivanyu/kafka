@@ -91,6 +91,8 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO handle concurrent cleaning and deletion (leader epochs)
 
+    // TODO garbage collection in S3 (orphan files, etc)
+
     // for testing
     private Integer maxKeys = null;
     private AwsClientBuilder.EndpointConfiguration endpointConfiguration = null;

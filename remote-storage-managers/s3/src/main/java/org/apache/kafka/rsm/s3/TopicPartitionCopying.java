@@ -43,8 +43,14 @@ import com.amazonaws.services.s3.transfer.Upload;
 import kafka.log.LogSegment;
 import kafka.log.remote.RDI;
 import kafka.log.remote.RemoteLogIndexEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class TopicPartitionCopying {
+
+    private static final Logger log = LoggerFactory.getLogger(TopicPartitionCopying.class);
+    private final String logPrefix;
+
     private final int leaderEpoch;
 
     private final TopicPartition topicPartition;
@@ -75,12 +81,14 @@ class TopicPartitionCopying {
         }
     };
 
-    TopicPartitionCopying(int leaderEpoch,
-                          TopicPartition topicPartition,
+    TopicPartitionCopying(TopicPartition topicPartition,
+                          int leaderEpoch,
                           LogSegment logSegment,
                           String bucketName,
                           TransferManager transferManager,
                           int indexIntervalBytes) {
+        this.logPrefix = "Topic-partition: " + topicPartition + ", leader epoch: " + leaderEpoch;
+
         this.leaderEpoch = leaderEpoch;
         this.topicPartition = topicPartition;
         this.logSegment = logSegment;
@@ -148,22 +156,27 @@ class TopicPartitionCopying {
 
             return remoteLogIndexEntries;
         } catch (SdkClientException e) {
-            throw new KafkaException("Error copying files for " + logSegment + " in " + topicPartition, e);
+            throw new KafkaException("Error copying files for " + logSegment +
+                " in " + topicPartition +
+                " with leader epoch " + leaderEpoch, e);
         }
     }
 
     private Upload uploadLogFile(LogSegment logSegment) {
         final String key = LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading log file: {}", logPrefix, key);
         return uploadFile(key, logSegment.log().file());
     }
 
     private Upload uploadOffsetIndexLogFile(LogSegment logSegment) {
         final String key = OffsetIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading offset index file: {}", logPrefix, key);
         return uploadFile(key, logSegment.offsetIndex().file());
     }
 
     private Upload uploadTimeIndexLogFile(LogSegment logSegment) {
         final String key = TimeIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading time index file: {}", logPrefix, key);
         return uploadFile(key, logSegment.timeIndex().file());
     }
 
@@ -174,10 +187,13 @@ class TopicPartitionCopying {
     private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) {
         String key = LastModifiedReverseIndexKey.key(
             topicPartition, logSegment.lastModified(), baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading last modifier reverse index entry: {}", logPrefix, key);
         return uploadEmptyFile(key);
     }
 
     private Upload uploadRemoteLogIndex(List<RemoteLogIndexEntry> remoteLogIndexEntries) throws IOException {
+        String key = RemoteLogIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading remote index file: {}", logPrefix, key);
         int totalSize = 0;
         List<ByteBuffer> remoteLogIndexEntryBuffers = new ArrayList<>(remoteLogIndexEntries.size());
         for (RemoteLogIndexEntry remoteLogIndexEntry : remoteLogIndexEntries) {
@@ -188,7 +204,6 @@ class TopicPartitionCopying {
 
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(totalSize);
-        String key = RemoteLogIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         try (InputStream inputStream = new GatheringByteBufferInputStream(remoteLogIndexEntryBuffers)) {
             return transferManager.upload(bucketName, key, inputStream, metadata);
         }
@@ -196,6 +211,7 @@ class TopicPartitionCopying {
 
     private Upload uploadMarker() {
         String key = MarkerKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        log.debug("[{}] Uploading marker: {}", logPrefix, key);
         return uploadEmptyFile(key);
     }
 
@@ -218,16 +234,22 @@ class TopicPartitionCopying {
     void cancel() {
         synchronized (lock) {
             if (!cancelled) {
+                log.debug("[{}] Cancelling uploads", logPrefix);
                 cancelled = true;
                 for (Upload upload : uploads) {
                     upload.abort();
                 }
+            } else {
+                log.debug("[{}] Already cancelled", logPrefix);
             }
         }
     }
 
     private void throwSegmentCopyingInterruptedException(Throwable cause) {
-        String message = "Copying of segment " + logSegment + " for topic-partition " + topicPartition + " interrupted";
+        String message = "Copying of segment " + logSegment +
+            " for topic-partition " + topicPartition +
+            " in lead epoch " + leaderEpoch +
+            " interrupted";
         KafkaException ex;
         if (cause != null) {
             ex = new KafkaException(message, cause);

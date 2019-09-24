@@ -189,6 +189,17 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         ));
     }
 
+    @Test
+    public void testCopyEmptySegment() throws IOException {
+        remoteStorageManager.configure(basicProps(bucket));
+
+        LogSegment segment = createLogSegment(0);
+        segment.onBecomeInactiveSegment();
+
+        Throwable e = assertThrows(AssertionError.class, () -> remoteStorageManager.copyLogSegment(TP0, segment, 0));
+        assertEquals("Log segment size must be > 0", e.getMessage());
+    }
+
     // TODO think out the overwriting logic and change the test
     @Test
     public void testOverwrite() throws IOException {

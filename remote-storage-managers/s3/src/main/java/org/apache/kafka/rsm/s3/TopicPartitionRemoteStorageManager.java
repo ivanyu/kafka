@@ -67,10 +67,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 
-public class TopicPartitionRemoteStorageManager {
+class TopicPartitionRemoteStorageManager {
 
-    // TODO log (including other files)
     private static final Logger log = LoggerFactory.getLogger(TopicPartitionRemoteStorageManager.class);
+    private final String logPrefix;
 
     static final String RDI_POSITION_SEPARATOR = "#";
     private static final Pattern RDI_PATTERN = Pattern.compile("(.*)" + RDI_POSITION_SEPARATOR + "(\\d+)");
@@ -87,7 +87,12 @@ public class TopicPartitionRemoteStorageManager {
     private final AtomicReference<TopicPartitionCopying> ongoingCopying = new AtomicReference<>();
 
     TopicPartitionRemoteStorageManager(TopicPartition topicPartition,
-                                       String bucket, AmazonS3 s3Client, TransferManager transferManager, Integer maxKeys, int indexIntervalBytes) {
+                                       String bucket,
+                                       AmazonS3 s3Client,
+                                       TransferManager transferManager,
+                                       Integer maxKeys,
+                                       int indexIntervalBytes) {
+        this.logPrefix = "Topic-partition: " + topicPartition;
         this.topicPartition = topicPartition;
         this.bucket = bucket;
         this.s3Client = s3Client;
@@ -98,15 +103,15 @@ public class TopicPartitionRemoteStorageManager {
 
     long earliestLogOffset() throws IOException {
         String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
+        ListObjectsV2Request listObjectsRequest = createListObjectsRequest(directoryPrefix);
+        log.debug("[{}] Listing objects on S3 with request {}", logPrefix, listObjectsRequest);
+
         ListObjectsV2Result listObjectsResult;
 
         try {
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
+                log.debug("[{}] Received object list from S3: {}", logPrefix, listObjectsResult);
 
                 for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
                     String key = objectSummary.getKey();
@@ -115,7 +120,7 @@ public class TopicPartitionRemoteStorageManager {
                         Marker marker = Marker.parse(key.substring(directoryPrefix.length()));
                         return marker.baseOffset();
                     } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
+                        log.warn("[{}] File {} has incorrect name format, skipping", logPrefix, key);
                     }
                 }
 
@@ -129,7 +134,7 @@ public class TopicPartitionRemoteStorageManager {
     }
 
     List<RemoteLogIndexEntry> copyLogSegment(LogSegment logSegment,
-                                                    int leaderEpoch) throws IOException {
+                                             int leaderEpoch) throws IOException {
 
         // TODO concurrent upload among several brokers - document, etc
         // TODO don't copy if marker exists
@@ -139,8 +144,12 @@ public class TopicPartitionRemoteStorageManager {
             throw new IllegalStateException("Already ongoing copying for " + topicPartition);
         }
 
+        if (logSegment.size() == 0) {
+            throw new AssertionError("Log segment size must be > 0");
+        }
+
         TopicPartitionCopying copying = new TopicPartitionCopying(
-            leaderEpoch, topicPartition, logSegment, bucket, transferManager, indexIntervalBytes);
+            topicPartition, leaderEpoch, logSegment, bucket, transferManager, indexIntervalBytes);
         ongoingCopying.set(copying);
         try {
             return copying.copy();
@@ -159,11 +168,10 @@ public class TopicPartitionRemoteStorageManager {
     List<RemoteLogSegmentInfo> listRemoteSegments(long minBaseOffset) throws IOException {
         String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
         String startAfterKey = MarkerKey.baseOffsetPrefix(topicPartition, minBaseOffset);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys) // it's ok to pass null here
-            .withStartAfter(startAfterKey);
+        ListObjectsV2Request listObjectsRequest =
+            createListObjectsRequest(directoryPrefix)
+                .withStartAfter(startAfterKey);
+        log.debug("[{}] Listing objects on S3 with request {}", logPrefix, listObjectsRequest);
         ListObjectsV2Result listObjectsResult;
 
         List<RemoteLogSegmentInfo> result = new ArrayList<>();
@@ -171,6 +179,7 @@ public class TopicPartitionRemoteStorageManager {
         try {
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
+                log.debug("[{}] Received object list from S3: {}", logPrefix, listObjectsResult);
 
                 for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
                     String key = objectSummary.getKey();
@@ -179,12 +188,12 @@ public class TopicPartitionRemoteStorageManager {
                     try {
                         marker = Marker.parse(key.substring(directoryPrefix.length()));
                     } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
+                        log.warn("[{}] File {} has incorrect name format, skipping", logPrefix, key);
                         continue;
                     }
 
                     if (marker.baseOffset() < minBaseOffset) {
-                        log.warn("Requested files starting from key {}, but got {}", startAfterKey, key);
+                        log.warn("[{}] Requested files starting from key {}, but got {}", logPrefix, startAfterKey, key);
                     }
                     assert marker.baseOffset() >= minBaseOffset;
 
@@ -221,6 +230,7 @@ public class TopicPartitionRemoteStorageManager {
         String remoteLogIndexFileKey = RemoteLogIndexFileKey.key(
             remoteLogSegment.topicPartition(), remoteLogSegment.baseOffset(), remoteLogSegment.lastOffset(),
             marker.get().leaderEpoch());
+        log.debug("[{}] Getting remote log index file by key {}", logPrefix, remoteLogIndexFileKey);
         try (S3Object s3Object = s3Client.getObject(bucket, remoteLogIndexFileKey);
              S3ObjectInputStream is = s3Object.getObjectContent()) {
 
@@ -241,15 +251,14 @@ public class TopicPartitionRemoteStorageManager {
         final String directoryPrefix = MarkerKey.directoryPrefix(topicPartition);
 
         String fileS3KeyPrefix = MarkerKey.keyPrefixWithoutLeaderEpochNumber(topicPartition, baseOffset, lastOffset);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(fileS3KeyPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
+        ListObjectsV2Request listObjectsRequest = createListObjectsRequest(fileS3KeyPrefix);
+        log.debug("[{}] Listing objects on S3 with request {}", logPrefix, listObjectsRequest);
         ListObjectsV2Result listObjectsResult;
 
         try {
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
+                log.debug("[{}] Received object list from S3: {}", logPrefix, listObjectsResult);
 
                 for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
                     final String key = objectSummary.getKey();
@@ -261,7 +270,7 @@ public class TopicPartitionRemoteStorageManager {
                             Marker.parse(key.substring(directoryPrefix.length()))
                         );
                     } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
+                        log.warn("[{}] File {} has incorrect name format, skipping", logPrefix, key);
                     }
                 }
 
@@ -275,10 +284,8 @@ public class TopicPartitionRemoteStorageManager {
     }
 
     boolean deleteTopicPartition() {
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(topicPartitionDirectory(topicPartition))
-            .withMaxKeys(maxKeys);  // it's ok to pass null here
+        ListObjectsV2Request listObjectsRequest = createListObjectsRequest(topicPartitionDirectory(topicPartition));
+        log.debug("[{}] Listing objects on S3 with request {}", logPrefix, listObjectsRequest);
 
         try {
             List<String> keysToDelete = new ArrayList<>();
@@ -287,6 +294,8 @@ public class TopicPartitionRemoteStorageManager {
             do {
                 // TODO validate this from the read-after-delete point of view
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
+                log.debug("[{}] Received object list from S3: {}", logPrefix, listObjectsResult);
+
                 keysToDelete.addAll(
                     listObjectsResult.getObjectSummaries().stream()
                         .map(S3ObjectSummary::getKey)
@@ -305,10 +314,8 @@ public class TopicPartitionRemoteStorageManager {
 
     long cleanupLogUntil(long cleanUpTillMs) throws IOException {
         String directoryPrefix = LastModifiedReverseIndexKey.directoryPrefix(topicPartition);
-        ListObjectsV2Request listObjectsRequest = new ListObjectsV2Request()
-            .withBucketName(bucket)
-            .withPrefix(directoryPrefix)
-            .withMaxKeys(maxKeys); // it's ok to pass null here
+        ListObjectsV2Request listObjectsRequest = createListObjectsRequest(directoryPrefix);
+        log.debug("[{}] Listing objects on S3 with request {}", logPrefix, listObjectsRequest);
 
         // TODO test interrupted cleanup.
 
@@ -326,6 +333,7 @@ public class TopicPartitionRemoteStorageManager {
             outer:
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
+                log.debug("[{}] Received object list from S3: {}", logPrefix, listObjectsResult);
 
                 for (S3ObjectSummary objectSummary : listObjectsResult.getObjectSummaries()) {
                     final String key = objectSummary.getKey();
@@ -336,12 +344,16 @@ public class TopicPartitionRemoteStorageManager {
                             key.substring(directoryPrefix.length())
                         );
                     } catch (IllegalArgumentException e) {
-                        log.warn("File {} has incorrect name format, skipping", key);
+                        log.warn("[{}] File {} has incorrect name format, skipping", logPrefix, key);
                         continue;
                     }
 
+                    log.debug("[{}] Found last modified reverse log entry {}", logPrefix, entry);
+
                     // Rely on the key listing order.
                     if (entry.lastModifiedMs() > cleanUpTillMs) {
+                        log.debug("[{}] Last modified reverse log entry {} is beyond cleanUpTillMs ({}), stopping",
+                            logPrefix, entry, cleanUpTillMs);
                         break outer;
                     }
 
@@ -355,8 +367,11 @@ public class TopicPartitionRemoteStorageManager {
                 listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
             } while (listObjectsResult.isTruncated());
 
+            log.debug("[{}] Deleting markers: {}", logPrefix, markers);
             deleteKeys(markers);
+            log.debug("[{}] Deleting data files: {}", logPrefix, dataFiles);
             deleteKeys(dataFiles);
+            log.debug("[{}] Deleting last modified reverse index entries: {}", logPrefix, lastModifiedReverseIndexEntries);
             deleteKeys(lastModifiedReverseIndexEntries);
         } catch (SdkClientException e) {
             throw new KafkaException("Error cleaning log until " + cleanUpTillMs + " in " + topicPartition, e);
@@ -367,7 +382,15 @@ public class TopicPartitionRemoteStorageManager {
         return earliestLogOffset();
     }
 
+    private ListObjectsV2Request createListObjectsRequest(String prefix) {
+        return new ListObjectsV2Request()
+            .withBucketName(bucket)
+            .withPrefix(prefix)
+            .withMaxKeys(maxKeys); // it's ok to pass null here
+    }
+
     private void deleteKeys(Collection<String> keys) {
+        log.debug("[{}] Deleting keys {}", logPrefix, keys);
         List<List<String>> chunks = new ArrayList<>();
         chunks.add(new ArrayList<>());
 
@@ -384,7 +407,7 @@ public class TopicPartitionRemoteStorageManager {
             assert chunk.size() <= 1000;
 
             final String[] chunkArray = chunk.toArray(new String[]{});
-            log.trace("Deleting keys {}", Arrays.toString(chunkArray));
+            log.debug("[{}] Deleting key chunk {}", logPrefix, Arrays.toString(chunkArray));
             DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
                 .withKeys(chunkArray);
             try {
@@ -395,7 +418,8 @@ public class TopicPartitionRemoteStorageManager {
                 // appear only in tests with Localstack.
                 // TODO not needed if we switch to integration testing with real S3.
                 for (MultiObjectDeleteException.DeleteError error : e.getErrors()) {
-                    log.warn("Error deleting key {}: {} {}", error.getKey(), error.getCode(), error.getMessage());
+                    log.warn("[{}] Error deleting key {}: {} {}",
+                        logPrefix, error.getKey(), error.getCode(), error.getMessage());
                 }
             } catch (SdkClientException e) {
                 throw new KafkaException("Error deleting keys " + Arrays.toString(chunkArray), e);
@@ -419,10 +443,10 @@ public class TopicPartitionRemoteStorageManager {
         ByteBuffer buffer = readBytes(remoteLogIndexEntry);
         MemoryRecords records = MemoryRecords.readableRecords(buffer);
 
-        int firstBatchPosition = 0;
+        int firstBatchPos = 0;
         RecordBatch firstBatch = null;
         int bytesCoveredByCompleteBatches = 0;
-        
+
         Iterator<MutableRecordBatch> batchIter = records.batchIterator();
         // Find the first batch to read from.
         while (batchIter.hasNext() && firstBatch == null) {
@@ -433,9 +457,10 @@ public class TopicPartitionRemoteStorageManager {
                     bytesCoveredByCompleteBatches += firstBatch.sizeInBytes();
                 }
             } else {
-                firstBatchPosition += batch.sizeInBytes();
+                firstBatchPos += batch.sizeInBytes();
             }
         }
+        log.debug("[{}] Position of first batch to read from: {}", logPrefix, firstBatchPos);
 
         // TODO improve implementation and tests once contract is stable
 
@@ -447,13 +472,18 @@ public class TopicPartitionRemoteStorageManager {
             }
             bytesCoveredByCompleteBatches += batch.sizeInBytes();
         }
+        log.debug("[{}] Bytes covered by complete batches until maxBytes ({}) is reached: {}",
+            logPrefix, maxBytes, bytesCoveredByCompleteBatches);
 
         assert bytesCoveredByCompleteBatches <= maxBytes;
 
         if (bytesCoveredByCompleteBatches == 0) {
             if (minOneMessage && firstBatch != null) {
+                log.debug("[{}] minOneMessage: {}, firstBatch: {}, trying to get first record",
+                    logPrefix, minOneMessage, firstBatch);
                 Iterator<Record> iterator = firstBatch.iterator();
                 if (iterator.hasNext()) {
+                    log.debug("[{}] First batch is not empty, returning first record", logPrefix);
                     return MemoryRecords.withRecords(
                         firstBatch.magic(),
                         firstBatch.baseOffset(),
@@ -466,20 +496,26 @@ public class TopicPartitionRemoteStorageManager {
                         firstBatch.isTransactional(),
                         new SimpleRecord(iterator.next()));
                 } else {
+                    log.debug("[{}] First batch is empty, returning empty records", logPrefix);
                     return MemoryRecords.EMPTY;
                 }
             } else {
+                log.debug("[{}] minOneMessage: {}, firstBatch: {}, returning empty records",
+                    logPrefix, minOneMessage, firstBatch);
                 return MemoryRecords.EMPTY;
             }
         } else {
-            buffer.position(firstBatchPosition);
-            buffer.limit(firstBatchPosition + bytesCoveredByCompleteBatches);
+            final int limit = firstBatchPos + bytesCoveredByCompleteBatches;
+            log.debug("[{}] Reading records from {} to {}", logPrefix, firstBatchPos, limit);
+            buffer.position(firstBatchPos);
+            buffer.limit(limit);
             return MemoryRecords.readableRecords(buffer.slice());
         }
     }
 
     private ByteBuffer readBytes(RemoteLogIndexEntry remoteLogIndexEntry) throws IOException {
         String rdi = new String(remoteLogIndexEntry.rdi(), StandardCharsets.UTF_8);
+        log.debug("[{}] Reading data using RDI {}", logPrefix, rdi);
         Matcher m = RDI_PATTERN.matcher(rdi);
         if (!m.matches()) {
             throw new IllegalArgumentException("Can't parse RDI: " + rdi);
@@ -487,13 +523,18 @@ public class TopicPartitionRemoteStorageManager {
 
         String s3Key = m.group(1);
         int position = Integer.parseInt(m.group(2));
+        log.debug("[{}] S3 key: {}, position: {}", logPrefix, s3Key, position);
 
         // TODO what if dataLength() is incorrect? (what happens when range request is longer than data?)
         GetObjectRequest getRequest = new GetObjectRequest(bucket, s3Key)
             .withRange(position, position + remoteLogIndexEntry.dataLength());
+        log.debug("[{}] Getting data from S3 with request: {}", logPrefix, getRequest);
         try (S3Object s3Object = s3Client.getObject(getRequest);
              S3ObjectInputStream is = s3Object.getObjectContent()) {
-            ByteBuffer buffer = ByteBuffer.allocate(((Long)s3Object.getObjectMetadata().getContentLength()).intValue());
+            log.debug("[{}] Got S3 object: {}", logPrefix, s3Object);
+            int contentLength = (int) s3Object.getObjectMetadata().getContentLength();
+            log.debug("[{}] Reading {} bytes", logPrefix, contentLength);
+            ByteBuffer buffer = ByteBuffer.allocate(contentLength);
             Utils.readFully(is, buffer);
             buffer.flip();
             return buffer;
@@ -503,9 +544,7 @@ public class TopicPartitionRemoteStorageManager {
     }
 
     void close() {
-        // TODO cancel uploads
-        // TODO go to closed state
-        // TODO abort multipart
+        cancelCopyingLogSegment();
     }
 
     private static String topicPartitionDirectory(TopicPartition topicPartition) {

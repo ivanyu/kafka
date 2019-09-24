@@ -17,7 +17,6 @@
 package org.apache.kafka.rsm.s3;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -35,7 +34,6 @@ import com.amazonaws.services.s3.transfer.internal.UploadImpl;
 import com.amazonaws.services.s3.transfer.model.UploadResult;
 import kafka.log.LogSegment;
 import kafka.log.remote.RemoteLogIndexEntry;
-import kafka.log.remote.RemoteLogSegmentInfo;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.After;
@@ -181,8 +179,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
                 @Override
                 public TopicPartitionCopying answer() {
                     return new TopicPartitionCopying(
-                        (int) EasyMock.getCurrentArguments()[0],
-                        (TopicPartition) EasyMock.getCurrentArguments()[1],
+                        (TopicPartition) EasyMock.getCurrentArguments()[1], (int) EasyMock.getCurrentArguments()[0],
                         (LogSegment) EasyMock.getCurrentArguments()[2],
                         (String) EasyMock.getCurrentArguments()[3],
                         (TransferManager) EasyMock.getCurrentArguments()[4],
