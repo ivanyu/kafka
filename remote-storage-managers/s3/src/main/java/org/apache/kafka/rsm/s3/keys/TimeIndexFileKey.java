@@ -8,7 +8,7 @@ public class TimeIndexFileKey extends Key {
     private TimeIndexFileKey() {}
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
-        return topicPartitionDirectory(topicPartition) + DIRECTORY + "/"
+        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR
             + formatLong(baseOffset)
             + "-"
             + formatLong(lastOffset)

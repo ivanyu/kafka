@@ -66,14 +66,12 @@ import kafka.log.remote.RemoteLogSegmentInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
+import scala.collection.Seq;
 
 class TopicPartitionRemoteStorageManager {
 
     private static final Logger log = LoggerFactory.getLogger(TopicPartitionRemoteStorageManager.class);
     private final String logPrefix;
-
-    static final String RDI_POSITION_SEPARATOR = "#";
-    private static final Pattern RDI_PATTERN = Pattern.compile("(.*)" + RDI_POSITION_SEPARATOR + "(\\d+)");
 
     private final TopicPartition topicPartition;
 
@@ -92,7 +90,7 @@ class TopicPartitionRemoteStorageManager {
                                        TransferManager transferManager,
                                        Integer maxKeys,
                                        int indexIntervalBytes) {
-        this.logPrefix = "Topic-partition: " + topicPartition;
+        this.logPrefix = topicPartition.toString();
         this.topicPartition = topicPartition;
         this.bucket = bucket;
         this.s3Client = s3Client;
@@ -234,7 +232,8 @@ class TopicPartitionRemoteStorageManager {
         try (S3Object s3Object = s3Client.getObject(bucket, remoteLogIndexFileKey);
              S3ObjectInputStream is = s3Object.getObjectContent()) {
 
-            return JavaConverters.seqAsJavaList(RemoteLogIndexEntry.readAll(is));
+            final Seq<RemoteLogIndexEntry> remoteLogIndexEntrySeq = RemoteLogIndexEntry.readAll(is);
+            return JavaConverters.seqAsJavaList(remoteLogIndexEntrySeq);
         } catch (SdkClientException e) {
             throw new KafkaException("Error reading remote log index file " + remoteLogIndexFileKey, e);
         }
@@ -514,15 +513,10 @@ class TopicPartitionRemoteStorageManager {
     }
 
     private ByteBuffer readBytes(RemoteLogIndexEntry remoteLogIndexEntry) throws IOException {
-        String rdi = new String(remoteLogIndexEntry.rdi(), StandardCharsets.UTF_8);
-        log.debug("[{}] Reading data using RDI {}", logPrefix, rdi);
-        Matcher m = RDI_PATTERN.matcher(rdi);
-        if (!m.matches()) {
-            throw new IllegalArgumentException("Can't parse RDI: " + rdi);
-        }
+        RdiParsed rdiParsed = new RdiParsed(remoteLogIndexEntry.rdi());
 
-        String s3Key = m.group(1);
-        int position = Integer.parseInt(m.group(2));
+        String s3Key = rdiParsed.getS3Key();
+        int position = rdiParsed.getPosition();
         log.debug("[{}] S3 key: {}, position: {}", logPrefix, s3Key, position);
 
         // TODO what if dataLength() is incorrect? (what happens when range request is longer than data?)

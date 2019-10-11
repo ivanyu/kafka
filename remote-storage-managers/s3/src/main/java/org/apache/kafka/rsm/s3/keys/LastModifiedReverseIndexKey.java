@@ -18,6 +18,6 @@ public class LastModifiedReverseIndexKey extends Key {
     }
 
     public static String directoryPrefix(TopicPartition topicPartition) {
-        return topicPartitionDirectory(topicPartition) + DIRECTORY + "/";
+        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR;
     }
 }

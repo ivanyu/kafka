@@ -153,7 +153,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
         String rdiStr = s3Key(TP0, "log", 0, 10, 0) + "#123";
         RemoteLogIndexEntry remoteLogIndexEntry = RemoteLogIndexEntry.apply(0, 10, 0, 100, 10, rdiStr.getBytes());
         Throwable e = assertThrows(KafkaException.class,
-            () -> remoteStorageManager.read(TP0, remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
+            () -> remoteStorageManager.read(remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
         assertEquals(e.getMessage(), "Error reading log file " + s3Key(TP0, "log", 0, 10, 0));
     }
 
@@ -162,7 +162,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
         String rdiStr = s3Key(TP0, "log", 0, 10, 0) + "#incorrect";
         RemoteLogIndexEntry remoteLogIndexEntry = RemoteLogIndexEntry.apply(0, 10, 0, 100, 10, rdiStr.getBytes());
         Throwable e = assertThrows(IllegalArgumentException.class,
-            () -> remoteStorageManager.read(TP0, remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
+            () -> remoteStorageManager.read(remoteLogIndexEntry, Integer.MAX_VALUE, 0, false));
         assertEquals(e.getMessage(), "Can't parse RDI: " + rdiStr);
     }
 

@@ -49,6 +49,7 @@ import org.slf4j.LoggerFactory;
 class TopicPartitionCopying {
 
     private static final Logger log = LoggerFactory.getLogger(TopicPartitionCopying.class);
+
     private final String logPrefix;
 
     private final int leaderEpoch;
@@ -102,15 +103,11 @@ class TopicPartitionCopying {
             logSegment.log().batches(),
             indexIntervalBytes,
             (firstBatch) ->
-                s3RDI(
+                RdiParsed.createRDI(
                     LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch),
                     firstBatch.position()
                 )
         );
-    }
-
-    private RDI s3RDI(String s3Key, long position) {
-        return new RDI((s3Key + TopicPartitionRemoteStorageManager.RDI_POSITION_SEPARATOR + position).getBytes(StandardCharsets.UTF_8));
     }
 
     List<RemoteLogIndexEntry> copy() throws IOException {

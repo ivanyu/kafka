@@ -87,6 +87,8 @@ import scala.collection.JavaConverters;
 //  - marker, reverse index, data file upload and delete order.
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
+    private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
+
     // TODO handle the situation with several leader epochs, test it
 
     // TODO handle concurrent cleaning and deletion (leader epochs)
@@ -184,12 +186,14 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     }
 
     @Override
-    public Records read(TopicPartition topicPartition,
-                        RemoteLogIndexEntry remoteLogIndexEntry,
+    public Records read(RemoteLogIndexEntry remoteLogIndexEntry,
                         int maxBytes,
                         long startOffset,
                         boolean minOneMessage) throws IOException {
-        return topicPartitionManager(topicPartition).read(remoteLogIndexEntry, maxBytes, startOffset, minOneMessage);
+        RdiParsed rdiParsed = new RdiParsed(remoteLogIndexEntry.rdi());
+        TopicPartition topicPartition = LogFileKey.getTopicPartition(rdiParsed.getS3Key());
+        return topicPartitionManager(topicPartition)
+            .read(remoteLogIndexEntry, maxBytes, startOffset, minOneMessage);
     }
 
     @Override

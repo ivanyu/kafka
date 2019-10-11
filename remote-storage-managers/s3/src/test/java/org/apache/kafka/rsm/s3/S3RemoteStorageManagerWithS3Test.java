@@ -313,7 +313,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         Iterator<FileLogInputStream.FileChannelRecordBatch> batchIterator = segmentOnS3Setup.segment.log().batchIterator();
         for (RemoteLogIndexEntry remoteLogIndexEntry : segmentOnS3Setup.remoteLogIndexEntries) {
             Records readRecords = remoteStorageManager.read(
-                segmentOnS3Setup.topicPartition,
                 remoteLogIndexEntry,
                 maxBytes,
                 remoteLogIndexEntry.firstOffset(), true);
@@ -336,7 +335,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         int maxBytes = Integer.MAX_VALUE;
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0), maxBytes, 5, true);
 
         // Offset 5 goes to the 1st index entry, 1st batch.
@@ -356,7 +354,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         int maxBytes = Integer.MAX_VALUE;
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0), maxBytes, 10, true);
 
         // Offset 10 goes to the 1st index entry, 2nd batch.
@@ -374,7 +371,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         final SegmentOnS3Setup segmentOnS3Setup = uploadSegment(0, 0, true);
         Throwable e = assertThrows(IllegalArgumentException.class,
             () -> remoteStorageManager.read(
-                segmentOnS3Setup.topicPartition,
                 segmentOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 100, true));
         assertEquals("startOffset > remoteLogIndexEntry.lastOffset(): 100 > 21", e.getMessage());
     }
@@ -385,7 +381,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         int maxBytes = 1;
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0), maxBytes, 0, false);
 
         assertEquals(0, countRecords(readRecords));
@@ -398,7 +393,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         int maxBytes = 1;
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0), maxBytes, 0, true);
 
         assertEquals(1, countRecords(readRecords));
@@ -423,7 +417,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         deleteMarker(segmentOnS3Setup.baseOffset, segmentOnS3Setup.lastOffset, segmentOnS3Setup.leaderEpoch);
 
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true);
         assertEquals(NORMAL_BATCH_RECORD_COUNT * 3 + CONTROL_BATCH_RECORD_COUNT, countRecords(readRecords));
     }
@@ -436,7 +429,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         Throwable e = assertThrows(KafkaException.class,
             () -> remoteStorageManager.read(
-                segmentOnS3Setup.topicPartition,
                 segmentOnS3Setup.remoteLogIndexEntries.get(0), Integer.MAX_VALUE, 0, true));
         assertEquals(
             "Error reading log file " +
@@ -481,7 +473,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             List<Record> readRecords = new ArrayList<>();
             for (RemoteLogIndexEntry remoteLogIndexEntry : segmentOnS3Setup.remoteLogIndexEntries) {
                 Records records = remoteStorageManager2.read(
-                    segmentOnS3Setup.topicPartition, remoteLogIndexEntry, maxBytes, remoteLogIndexEntry.firstOffset(), true);
+                    remoteLogIndexEntry, maxBytes, remoteLogIndexEntry.firstOffset(), true);
                 records.records().forEach(readRecords::add);
             }
             Iterator<Record> readRecordsIter = readRecords.iterator();
@@ -632,7 +624,6 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
 
         int maxBytes = segmentOnS3Setup.batchSizesInBytes.get(0) + 1;
         Records readRecords = remoteStorageManager.read(
-            segmentOnS3Setup.topicPartition,
             segmentOnS3Setup.remoteLogIndexEntries.get(0),
             maxBytes, 0, minOneRecord);
 
