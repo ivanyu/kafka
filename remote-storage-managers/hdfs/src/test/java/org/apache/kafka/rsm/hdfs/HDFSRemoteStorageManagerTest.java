@@ -146,7 +146,7 @@ public class HDFSRemoteStorageManagerTest {
         assertEquals(2, remoteSegments.size());
 
         indexEntries = rsm.getRemoteLogIndexEntries(remoteSegments.get(0));
-        Records records = rsm.read(tp, indexEntries.get(0), 100000, 0, true);
+        Records records = rsm.read(indexEntries.get(0), 100000, 0, true);
         int count = 0;
         for (Record r : records.records()) {
             assertFalse(r.hasKey());
@@ -155,7 +155,7 @@ public class HDFSRemoteStorageManagerTest {
         }
         assertEquals(200, count);
 
-        records = rsm.read(tp, indexEntries.get(0), 100000, 200, true);
+        records = rsm.read(indexEntries.get(0), 100000, 200, true);
         count = 0;
         for (Record r : records.records()) {
             assertFalse(r.hasKey());
@@ -164,7 +164,7 @@ public class HDFSRemoteStorageManagerTest {
         }
         assertEquals(100, count);
 
-        records = rsm.read(tp, indexEntries.get(0), 100, 0, true);
+        records = rsm.read(indexEntries.get(0), 100, 0, true);
         count = 0;
         for (Record r : records.records()) {
             assertFalse(r.hasKey());
@@ -193,7 +193,7 @@ public class HDFSRemoteStorageManagerTest {
         List<RemoteLogSegmentInfo> remoteSegments = rsm.listRemoteSegments(tp);
         List<RemoteLogIndexEntry> indexEntries = rsm.getRemoteLogIndexEntries(remoteSegments.get(0));
 
-        Records records = rsm.read(tp, indexEntries.get(0), 100000, 0, true);
+        Records records = rsm.read(indexEntries.get(0), 100000, 0, true);
         int count = 0;
         for (Record r : records.records()) {
             assertFalse(r.hasKey());
@@ -205,7 +205,7 @@ public class HDFSRemoteStorageManagerTest {
         rsm.deleteLogSegment(remoteSegments.get(0));
 
         assertThrows(IOException.class, () -> {
-            rsm.read(tp, indexEntries.get(0), 100000, 0, true);
+            rsm.read(indexEntries.get(0), 100000, 0, true);
         });
 
         assertThrows(IOException.class, () -> {
