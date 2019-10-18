@@ -17,52 +17,17 @@
 package org.apache.kafka.rsm.s3;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
-import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.BufferSupplier;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
-import org.apache.kafka.common.record.Record;
-import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
-import org.apache.kafka.common.record.SimpleRecord;
-import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.rsm.s3.keys.LastModifiedReverseIndexKey;
 import org.apache.kafka.rsm.s3.keys.LogFileKey;
-import org.apache.kafka.rsm.s3.keys.MarkerKey;
-import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
-import org.apache.kafka.rsm.s3.keys.RemoteLogIndexFileKey;
-import org.apache.kafka.rsm.s3.keys.TimeIndexFileKey;
 
-import com.amazonaws.SdkClientException;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ListObjectsV2Request;
-import com.amazonaws.services.s3.model.ListObjectsV2Result;
-import com.amazonaws.services.s3.model.MultiObjectDeleteException;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 import kafka.log.LogSegment;
@@ -73,21 +38,94 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 
+// TODO figure out multi file consistency!
+
 // TODO document the implementation:
 //  - consistency model of S3
 //  - RDI format
-//  - segments on the logical and physical level
 //  - read without marker will be successful (RDI)
-//  - markers
-//  - delete - first delete marker, all others - last write marker
 //  - last offset reverse index and time clean-up
 //  - migration (moving files and everything should work)
-//  - reliance on the lexicographical order of list
 //  - leader epoch and their priority
+//  - delete - first delete marker, all others - last write marker
 //  - marker, reverse index, data file upload and delete order.
+
+/**
+ * {@link RemoteStorageManager} implementation backed by AWS S3.
+ *
+ * <p>This implementation relies heavily on S3's ability to list objects with a prefix and its guarantee to
+ * list objects in the lexicographical order, also optionally returning only keys that lexicographically come
+ * after a specified key (even non-existing).
+ *
+ * <p>The implementation also uses some measures to overcome an S3's limitation,
+ * the lack of atomic operations on groups of files.
+ *
+ * <p>Files on remote storage might be deleted or overwritten with the same content,
+ * but never overwritten with different content.
+ *
+ * <p>For each log segment, the storage manager uploads a set of files to the remote tier:
+ * <ul>
+ *     <li>segment files created by Kafka: the log segment file itself, the offset and time indexes;</li>
+ *     <li>the remote log index file;</li>
+ *     <li>the last modified reverse index;</li>
+ *     <li>the marker file.</li>
+ * </ul>
+ *
+ * <p>The layout is the following:
+ * <pre>
+ *   {bucket} / {topic}-{partition} /
+ *     log /
+ *       {base-offset}-{last-offset}-le{leader-epoch}
+ *     index /
+ *       {base-offset}-{last-offset}-le{leader-epoch}
+ *     time-index /
+ *       {base-offset}-{last-offset}-le{leader-epoch}
+ *     remote-log-index /
+ *       {base-offset}-{last-offset}-le{leader-epoch}
+ *     last-modified-reverse-index /
+ *       {last-modified-ms}-{base-offset}-{last-offset}-le{leader-epoch}
+ *     marker /
+ *       {base-offset}-{last-offset}-le{leader-epoch}
+ * </pre>
+ *
+ * <p>Each file is uniquely identified by three values:
+ * <ul>
+ *     <li>the base offset of the segment;</li>
+ *     <li>the last offset in the segment;</li>
+ *     <li>the epoch of the leader which uploaded the file.</li>
+ * </ul>
+ *
+ * <p>The remote log index file stores {@link RemoteLogIndexEntry}s.
+ *
+ * <p>S3 doesn't provide an ordered index for objects by an associated timestamp.
+ * However, this is needed to find the oldest segments by timestamp for
+ * {@link S3RemoteStorageManager#cleanupLogUntil(TopicPartition, long)} operation.
+ * The last modified reverse index is a timestamp index created by the storage manager itself.
+ * Each key is prefixed by the timestamp when the segment file was last modified before uploading
+ * ({@link LogSegment#lastModified()}), the rest is the usual key suffix for a segment's files.
+ * The files themselves are empty.
+ *
+ * <p>When the cleanup operation is executed, the last modified reverse index entries' list is requested from S3.
+ * Since S3 lists files in the lexicographical order, the implementation reads key names until
+ * {@code {last-modified-ms}} component is less or equal to the specified timestamp.
+ * This effectively gives the list of the segments that were modified up until the specified timestamp.
+ *
+ * <p>The last modified reverse index entries are uploaded strictly before other files and deleted strictly after them
+ * to keep the whole segment's file set visible for cleaning even in case of partial uploading.
+ *
+ * <p>The markers are used for the indication that a segment has been completely uploaded and is available for use.
+ * This is needed to overcome an S3's limitation of the lack of atomic operations on groups of files.
+ * Markers are uploaded strictly after all other files and deleted strictly before them.
+ * Without a marker, the segment is invisible.
+ *
+ */
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
+
+    // TODO eventual consistency caveat (https://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#ConsistencyModel): GET before PUT
+
+    // TODO do we need index and time index?
 
     // TODO handle the situation with several leader epochs, test it
 

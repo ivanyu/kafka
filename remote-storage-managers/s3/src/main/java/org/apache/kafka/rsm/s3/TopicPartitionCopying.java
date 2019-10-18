@@ -20,7 +20,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -41,7 +40,6 @@ import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
 import kafka.log.LogSegment;
-import kafka.log.remote.RDI;
 import kafka.log.remote.RemoteLogIndexEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,6 +110,8 @@ class TopicPartitionCopying {
 
     List<RemoteLogIndexEntry> copy() throws IOException {
         try {
+            // Upload last modified reverse index entry in the first place to make
+            // the other files visible for cleaning of old segments even in case of a partial upload.
             synchronized(lock) {
                 if (cancelled) {
                     throwSegmentCopyingInterruptedException(null);
@@ -139,6 +139,7 @@ class TopicPartitionCopying {
 
             waitForAllUploads();
 
+            // Upload the marker in the end to mark that upload is completed.
             synchronized(lock) {
                 if (cancelled) {
                     throwSegmentCopyingInterruptedException(null);
