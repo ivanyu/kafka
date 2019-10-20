@@ -38,7 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
 
-// TODO figure out multi file consistency!
+// TODO figure out and document multi file consistency!
 
 // TODO document the implementation:
 //  - consistency model of S3

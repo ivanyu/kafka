@@ -13,11 +13,19 @@ public class LogFileKey extends Key {
     private LogFileKey() {}
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
-        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR
-            + formatLong(baseOffset)
-            + "-"
-            + formatLong(lastOffset)
-            + "-le" + leaderEpoch;
+        return keyPrefixWithoutLeaderEpochNumber(topicPartition, baseOffset, lastOffset) + leaderEpoch;
+    }
+
+    public static String keyPrefixWithoutLeaderEpochNumber(TopicPartition topicPartition, long baseOffset, long lastOffset) {
+        return baseOffsetPrefix(topicPartition, baseOffset) + "-" + formatLong(lastOffset) + "-le";
+    }
+
+    public static String baseOffsetPrefix(TopicPartition topicPartition, long baseOffset) {
+        return directoryPrefix(topicPartition) + formatLong(baseOffset);
+    }
+
+    public static String directoryPrefix(TopicPartition topicPartition) {
+        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR;
     }
 
     public static TopicPartition getTopicPartition(String s3Key) {

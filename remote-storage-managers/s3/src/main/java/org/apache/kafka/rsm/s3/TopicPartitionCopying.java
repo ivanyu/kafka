@@ -30,7 +30,6 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.rsm.s3.keys.LastModifiedReverseIndexKey;
 import org.apache.kafka.rsm.s3.keys.LogFileKey;
-import org.apache.kafka.rsm.s3.keys.MarkerKey;
 import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
 import org.apache.kafka.rsm.s3.keys.RemoteLogIndexFileKey;
 import org.apache.kafka.rsm.s3.keys.TimeIndexFileKey;
@@ -128,24 +127,23 @@ class TopicPartitionCopying {
                     throwSegmentCopyingInterruptedException(null);
                 }
 
-                Upload logFileUpload = uploadLogFile(logSegment);
                 Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
                 Upload timeIndexFileUpload = uploadTimeIndexLogFile(logSegment);
                 Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
                 uploads = Arrays.asList(
-                    logFileUpload, offsetIndexFileUpload, timeIndexFileUpload, remoteLogIndexUpload
+                    offsetIndexFileUpload, timeIndexFileUpload, remoteLogIndexUpload
                 );
             }
 
             waitForAllUploads();
 
-            // Upload the marker in the end to mark that upload is completed.
+            // Upload the log file in the end to mark that upload is completed.
             synchronized(lock) {
                 if (cancelled) {
                     throwSegmentCopyingInterruptedException(null);
                 }
-                Upload markerUpload = uploadMarker();
-                uploads = Collections.singletonList(markerUpload);
+                Upload logFileUpload = uploadLogFile(logSegment);
+                uploads = Collections.singletonList(logFileUpload);
             }
 
             waitForAllUploads();
@@ -205,12 +203,6 @@ class TopicPartitionCopying {
         try (InputStream inputStream = new GatheringByteBufferInputStream(remoteLogIndexEntryBuffers)) {
             return transferManager.upload(bucketName, key, inputStream, metadata);
         }
-    }
-
-    private Upload uploadMarker() {
-        String key = MarkerKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
-        log.debug("[{}] Uploading marker: {}", logPrefix, key);
-        return uploadEmptyFile(key);
     }
 
     private Upload uploadEmptyFile(String key) {

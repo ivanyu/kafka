@@ -3,7 +3,7 @@ package org.apache.kafka.rsm.s3;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-final class Marker {
+final class SegmentInfo {
     private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d+)");
 
     private final long baseOffset;
@@ -12,7 +12,7 @@ final class Marker {
 
     private final OffsetPair offsetPair;
 
-    private Marker(long baseOffset, long lastOffset, int leaderEpoch) {
+    private SegmentInfo(long baseOffset, long lastOffset, int leaderEpoch) {
         this.baseOffset = baseOffset;
         this.lastOffset = lastOffset;
         this.leaderEpoch = leaderEpoch;
@@ -37,18 +37,18 @@ final class Marker {
     }
 
     /**
-     * Parses marker string in the format {@code {base offset}-{last offset}-le{leader epoch}}.
+     * Parses a segment info string in the format {@code {base offset}-{last offset}-le{leader epoch}}.
      * @throws IllegalArgumentException if the format is incorrect.
      */
-    public static Marker parse(String markerStr) {
-        Matcher m = NAME_PATTERN.matcher(markerStr);
+    public static SegmentInfo parse(String coordinatesStr) {
+        Matcher m = NAME_PATTERN.matcher(coordinatesStr);
         if (m.matches()) {
             long baseOffset = Long.parseLong(m.group(1));
             long lastOffset = Long.parseLong(m.group(2));
             int leaderEpoch = Integer.parseInt(m.group(3));
-            return new Marker(baseOffset, lastOffset, leaderEpoch);
+            return new SegmentInfo(baseOffset, lastOffset, leaderEpoch);
         } else {
-            throw new IllegalArgumentException("Invalid marker format: " + markerStr);
+            throw new IllegalArgumentException("Invalid segment info format: " + coordinatesStr);
         }
     }
 }
