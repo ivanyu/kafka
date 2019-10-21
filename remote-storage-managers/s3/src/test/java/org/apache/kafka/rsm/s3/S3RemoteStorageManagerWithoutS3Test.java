@@ -169,23 +169,23 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
     @Test
     @PrepareForTest({S3RemoteStorageManager.class})
     public void testAlreadyOngoingCopying() throws Exception {
-        PowerMock.expectNew(TopicPartitionCopying.class,
+        PowerMock.expectNew(TopicPartitionUploading.class,
             EasyMock.anyObject(TopicPartition.class),
             EasyMock.anyObject(LogSegment.class),
             EasyMock.anyString(),
             EasyMock.anyObject(TransferManager.class),
             EasyMock.anyInt())
-            .andStubAnswer(new IAnswer<TopicPartitionCopying>() {
+            .andStubAnswer(new IAnswer<TopicPartitionUploading>() {
                 @Override
-                public TopicPartitionCopying answer() {
-                    return new TopicPartitionCopying(
+                public TopicPartitionUploading answer() {
+                    return new TopicPartitionUploading(
                         (TopicPartition) EasyMock.getCurrentArguments()[1], (int) EasyMock.getCurrentArguments()[0],
                         (LogSegment) EasyMock.getCurrentArguments()[2],
                         (String) EasyMock.getCurrentArguments()[3],
                         (TransferManager) EasyMock.getCurrentArguments()[4],
                         (Integer) EasyMock.getCurrentArguments()[5]) {
                         @Override
-                        public List<RemoteLogIndexEntry> copy() throws IOException {
+                        public List<RemoteLogIndexEntry> upload() throws IOException {
                             try {
                                 Thread.sleep(10000);
                                 throw new AssertionError("Shouldn't be here");

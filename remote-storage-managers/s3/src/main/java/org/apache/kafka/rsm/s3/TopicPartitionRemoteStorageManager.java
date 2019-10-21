@@ -78,7 +78,7 @@ class TopicPartitionRemoteStorageManager {
     private final Integer maxKeys;
     private final int indexIntervalBytes;
 
-    private final AtomicReference<TopicPartitionCopying> ongoingCopying = new AtomicReference<>();
+    private final AtomicReference<TopicPartitionUploading> ongoingUploadings = new AtomicReference<>();
 
     TopicPartitionRemoteStorageManager(TopicPartition topicPartition,
                                        String bucket,
@@ -131,31 +131,31 @@ class TopicPartitionRemoteStorageManager {
                                              int leaderEpoch) throws IOException {
 
         // TODO concurrent upload among several brokers - document, etc
-        // TODO don't copy if segment already exists
+        // TODO use e-tag to not overwrite with the same content (fix the doc also)
 
         // There are no concurrent calls per topic-partition.
-        if (ongoingCopying.get() != null) {
-            throw new IllegalStateException("Already ongoing copying for " + topicPartition);
+        if (ongoingUploadings.get() != null) {
+            throw new IllegalStateException("Already ongoing uploading for " + topicPartition);
         }
 
         if (logSegment.size() == 0) {
             throw new AssertionError("Log segment size must be > 0");
         }
 
-        TopicPartitionCopying copying = new TopicPartitionCopying(
+        TopicPartitionUploading uploading = new TopicPartitionUploading(
             topicPartition, leaderEpoch, logSegment, bucket, transferManager, indexIntervalBytes);
-        ongoingCopying.set(copying);
+        ongoingUploadings.set(uploading);
         try {
-            return copying.copy();
+            return uploading.upload();
         } finally {
-            ongoingCopying.set(null);
+            ongoingUploadings.set(null);
         }
     }
 
-    void cancelCopyingLogSegment() {
-        TopicPartitionCopying copying = ongoingCopying.getAndSet(null);
-        if (copying != null) {
-            copying.cancel();
+    void cancelUploadingLogSegment() {
+        TopicPartitionUploading uploading = ongoingUploadings.getAndSet(null);
+        if (uploading != null) {
+            uploading.cancel();
         }
     }
 
@@ -192,6 +192,8 @@ class TopicPartitionRemoteStorageManager {
                     assert segmentInfo.baseOffset() >= minBaseOffset;
 
                     // One offset pair may appear in different leader epochs, need to prevent duplication.
+                    // We rely on lexicographical sorting order, by which earlier leader epochs will appear
+                    // and be added the map before later leader epochs.
                     if (!seenOffsetPairs.contains(segmentInfo.offsetPair())) {
                         RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
                             segmentInfo.baseOffset(), segmentInfo.lastOffset(), topicPartition, segmentInfo.leaderEpoch(),
@@ -317,7 +319,7 @@ class TopicPartitionRemoteStorageManager {
         try {
             // Deletion order:
             // 1. Log file (makes segment unavailable for other operations).
-            // 2. Data.
+            // 2. Other data files.
             // 3. Last modified reverse index entries (needs to be in the end to enable retrying an interrupted cleanup).
 
             List<String> logFiles = new ArrayList<>();
@@ -533,7 +535,7 @@ class TopicPartitionRemoteStorageManager {
     }
 
     void close() {
-        cancelCopyingLogSegment();
+        cancelUploadingLogSegment();
     }
 
     private static String topicPartitionDirectory(TopicPartition topicPartition) {

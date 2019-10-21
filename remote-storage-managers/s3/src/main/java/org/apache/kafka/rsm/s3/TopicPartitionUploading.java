@@ -43,9 +43,12 @@ import kafka.log.remote.RemoteLogIndexEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class TopicPartitionCopying {
+/**
+ * Uploading of files that happen in a particular topic-partition.
+ */
+class TopicPartitionUploading {
 
-    private static final Logger log = LoggerFactory.getLogger(TopicPartitionCopying.class);
+    private static final Logger log = LoggerFactory.getLogger(TopicPartitionUploading.class);
 
     private final String logPrefix;
 
@@ -79,12 +82,12 @@ class TopicPartitionCopying {
         }
     };
 
-    TopicPartitionCopying(TopicPartition topicPartition,
-                          int leaderEpoch,
-                          LogSegment logSegment,
-                          String bucketName,
-                          TransferManager transferManager,
-                          int indexIntervalBytes) {
+    TopicPartitionUploading(TopicPartition topicPartition,
+                            int leaderEpoch,
+                            LogSegment logSegment,
+                            String bucketName,
+                            TransferManager transferManager,
+                            int indexIntervalBytes) {
         this.logPrefix = "Topic-partition: " + topicPartition + ", leader epoch: " + leaderEpoch;
 
         this.leaderEpoch = leaderEpoch;
@@ -107,13 +110,13 @@ class TopicPartitionCopying {
         );
     }
 
-    List<RemoteLogIndexEntry> copy() throws IOException {
+    List<RemoteLogIndexEntry> upload() throws IOException {
         try {
             // Upload last modified reverse index entry in the first place to make
             // the other files visible for cleaning of old segments even in case of a partial upload.
             synchronized(lock) {
                 if (cancelled) {
-                    throwSegmentCopyingInterruptedException(null);
+                    throwSegmentUploadingInterruptedException(null);
                 }
 
                 Upload lastModifiedReverseIndexFileUpload = uploadLastModifiedReverseIndexFile(logSegment);
@@ -124,7 +127,7 @@ class TopicPartitionCopying {
 
             synchronized(lock) {
                 if (cancelled) {
-                    throwSegmentCopyingInterruptedException(null);
+                    throwSegmentUploadingInterruptedException(null);
                 }
 
                 Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
@@ -140,7 +143,7 @@ class TopicPartitionCopying {
             // Upload the log file in the end to mark that upload is completed.
             synchronized(lock) {
                 if (cancelled) {
-                    throwSegmentCopyingInterruptedException(null);
+                    throwSegmentUploadingInterruptedException(null);
                 }
                 Upload logFileUpload = uploadLogFile(logSegment);
                 uploads = Collections.singletonList(logFileUpload);
@@ -152,7 +155,7 @@ class TopicPartitionCopying {
 
             return remoteLogIndexEntries;
         } catch (SdkClientException e) {
-            throw new KafkaException("Error copying files for " + logSegment +
+            throw new KafkaException("Error uploading files for " + logSegment +
                 " in " + topicPartition +
                 " with leader epoch " + leaderEpoch, e);
         }
@@ -217,7 +220,7 @@ class TopicPartitionCopying {
                 upload.waitForUploadResult();
             }
         } catch (InterruptedException | CancellationException e) {
-            throwSegmentCopyingInterruptedException(e);
+            throwSegmentUploadingInterruptedException(e);
         }
     }
 
@@ -235,8 +238,8 @@ class TopicPartitionCopying {
         }
     }
 
-    private void throwSegmentCopyingInterruptedException(Throwable cause) {
-        String message = "Copying of segment " + logSegment +
+    private void throwSegmentUploadingInterruptedException(Throwable cause) {
+        String message = "Uploading of segment " + logSegment +
             " for topic-partition " + topicPartition +
             " in lead epoch " + leaderEpoch +
             " interrupted";
