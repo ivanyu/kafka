@@ -36,19 +36,6 @@ import kafka.log.remote.RemoteLogSegmentInfo;
 import kafka.log.remote.RemoteStorageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.JavaConverters;
-
-// TODO figure out and document multi file consistency!
-
-// TODO document the implementation:
-//  - consistency model of S3
-//  - RDI format
-//  - read without marker will be successful (RDI)
-//  - last offset reverse index and time clean-up
-//  - migration (moving files and everything should work)
-//  - leader epoch and their priority
-//  - delete - first delete marker, all others - last write marker
-//  - marker, reverse index, data file upload and delete order.
 
 /**
  * {@link RemoteStorageManager} implementation backed by AWS S3.
@@ -57,8 +44,13 @@ import scala.collection.JavaConverters;
  * list objects in the lexicographical order, also optionally returning only keys that lexicographically come
  * after a specified key (even non-existing).
  *
- * <p>The implementation also uses some measures to overcome an S3's limitation,
- * the lack of atomic operations on groups of files.
+ * <p>S3 has important limitations in the context of this implementation:
+ * <ul>
+ *     <li>it lacks atomic operations on groups of files, like atomic rename, upload or delete;</li>
+ *     <li><a href="https://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#ConsistencyModel">
+ *         it is eventually consistent</a>.</li>
+ * </ul>
+ * The implementation tries to mitigate this, which will be described below.
  *
  * <p>Files on remote storage might be deleted or overwritten with the same content,
  * but never overwritten with different content.
@@ -67,8 +59,7 @@ import scala.collection.JavaConverters;
  * <ul>
  *     <li>segment files created by Kafka: the log segment file itself, the offset and time indexes;</li>
  *     <li>the remote log index file;</li>
- *     <li>the last modified reverse index;</li>
- *     <li>the marker file.</li>
+ *     <li>the last modified reverse index.</li>
  * </ul>
  *
  * <p>The layout is the following:
@@ -84,9 +75,11 @@ import scala.collection.JavaConverters;
  *       {base-offset}-{last-offset}-le{leader-epoch}
  *     last-modified-reverse-index /
  *       {last-modified-ms}-{base-offset}-{last-offset}-le{leader-epoch}
- *     marker /
- *       {base-offset}-{last-offset}-le{leader-epoch}
  * </pre>
+ *
+ * <p>The reason behind this inverted layout--grouping by file type instead of offset pairs--
+ * is that S3 supports prefix scans, so listing all log segments without irrelevant keys
+ * is easier this way.
  *
  * <p>Each file is uniquely identified by three values:
  * <ul>
@@ -110,28 +103,39 @@ import scala.collection.JavaConverters;
  * {@code {last-modified-ms}} component is less or equal to the specified timestamp.
  * This effectively gives the list of the segments that were modified up until the specified timestamp.
  *
- * <p>The last modified reverse index entries are uploaded strictly before other files and deleted strictly after them
- * to keep the whole segment's file set visible for cleaning even in case of partial uploading.
+ * <p>To keep the whole segment's file set visible for cleaning even in case of partial uploading
+ * (not all files are uploaded), last modified reverse index entries uploading must be confirmed before other files
+ * start being uploaded. The same happen on deletion: only when other files' deletion is confirmed,
+ * the last modified reverse index file is deleted.
  *
- * <p>The markers are used for the indication that a segment has been completely uploaded and is available for use.
- * This is needed to overcome an S3's limitation of the lack of atomic operations on groups of files.
- * Markers are uploaded strictly after all other files and deleted strictly before them.
- * Without a marker, the segment is invisible.
+ * <p>The presence of a log file itself serves also as an indication that a segment has been completely uploaded and
+ * is available for use. Because of this, they are uploaded strictly after all other files and deleted strictly
+ * before all other files (i.e. awaiting S3's confirmations to keep the order).
+ * Without the log file, the whole segment is visible only for cleaning up.
  *
+ * <p>However, there's a <strong>caveat</strong> regarding operation ordering due to S3's eventual consistency.
+ * Even if two operations happen in some strict order from the client point of view, it isn't guaranteed they will be
+ * replicated inside S3 in the same order and other clients (even the same one) will see them in the same order.
+ * In this implementation, there are no operations in which this can't be overcome by some reasonable retry policy.
+ * TODO: double check and confirm this.
+ *
+ * <p>TODO: multiple leader epochs and their priority (earlier has priority)
+ *
+ * <p>TODO: RDI format
+ *
+ * <p>
  */
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
 
-    // TODO eventual consistency caveat (https://docs.aws.amazon.com/AmazonS3/latest/dev/Introduction.html#ConsistencyModel): GET before PUT
-
     // TODO do we need index and time index?
 
     // TODO handle the situation with several leader epochs, test it
 
-    // TODO handle concurrent cleaning and deletion (leader epochs)
-
     // TODO garbage collection in S3 (orphan files, etc)
+
+    // TODO bucket migration (moving files and everything should work)
 
     // for testing
     private Integer maxKeys = null;
@@ -189,7 +193,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     @Override
     public void cancelCopyingLogSegment(TopicPartition topicPartition) {
-        topicPartitionManager(topicPartition).cancelCopyingLogSegment();
+        topicPartitionManager(topicPartition).cancelUploadingLogSegment();
     }
 
     @Override
