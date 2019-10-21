@@ -12,6 +12,6 @@ public class TimeIndexFileKey extends Key {
             + formatLong(baseOffset)
             + "-"
             + formatLong(lastOffset)
-            + "-le" + leaderEpoch;
+            + "-le" + formalInteger(leaderEpoch);
     }
 }

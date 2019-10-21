@@ -18,6 +18,7 @@ package org.apache.kafka.rsm.s3;
 
 import java.io.File;
 import java.io.IOException;
+import java.text.NumberFormat;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -45,6 +46,13 @@ class S3RemoteStorageManagerTestBase {
     static final TopicPartition TP1 = new TopicPartition(TOPIC, 1);
 
     File logDir;
+
+    private static NumberFormat LEADER_EPOCH_FORMAT = NumberFormat.getInstance();
+    static {
+        LEADER_EPOCH_FORMAT.setMinimumIntegerDigits(10);
+        LEADER_EPOCH_FORMAT.setMaximumFractionDigits(0);
+        LEADER_EPOCH_FORMAT.setGroupingUsed(false);
+    }
 
     @Before
     public void setUp() {
@@ -98,13 +106,13 @@ class S3RemoteStorageManagerTestBase {
             Log.filenamePrefixFromOffset(lastModifiedMs) + "-" +
             Log.filenamePrefixFromOffset(baseOffset) + "-" +
             Log.filenamePrefixFromOffset(lastOffset) +
-            "-le" + leaderEpoch;
+            "-le" + LEADER_EPOCH_FORMAT.format(leaderEpoch);
     }
 
     String s3Key(TopicPartition topicPartition, String dir, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartition + "/" + dir + "/" +
             Log.filenamePrefixFromOffset(baseOffset) + "-" +
             Log.filenamePrefixFromOffset(lastOffset) +
-            "-le" + leaderEpoch;
+            "-le" + LEADER_EPOCH_FORMAT.format(leaderEpoch);
     }
 }

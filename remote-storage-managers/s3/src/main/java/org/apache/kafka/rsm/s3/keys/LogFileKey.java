@@ -13,7 +13,7 @@ public class LogFileKey extends Key {
     private LogFileKey() {}
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
-        return keyPrefixWithoutLeaderEpochNumber(topicPartition, baseOffset, lastOffset) + leaderEpoch;
+        return keyPrefixWithoutLeaderEpochNumber(topicPartition, baseOffset, lastOffset) + formalInteger(leaderEpoch);
     }
 
     public static String keyPrefixWithoutLeaderEpochNumber(TopicPartition topicPartition, long baseOffset, long lastOffset) {
