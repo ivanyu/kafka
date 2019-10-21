@@ -19,7 +19,9 @@ package org.apache.kafka.rsm.s3;
 import java.io.File;
 import java.io.IOException;
 import java.text.NumberFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.amazonaws.auth.*;
@@ -40,13 +42,12 @@ import kafka.log.LogUtils;
 import kafka.utils.TestUtils;
 import org.junit.After;
 import org.junit.Before;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class S3RemoteStorageManagerTestBase {
-    static final String TOPIC = "connect-log";
-    static final TopicPartition TP0 = new TopicPartition(TOPIC, 0);
-    static final TopicPartition TP1 = new TopicPartition(TOPIC, 1);
 
-    File logDir;
+    private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManagerTestBase.class);
 
     private static NumberFormat LEADER_EPOCH_FORMAT = NumberFormat.getInstance();
     static {
@@ -55,14 +56,26 @@ class S3RemoteStorageManagerTestBase {
         LEADER_EPOCH_FORMAT.setGroupingUsed(false);
     }
 
+    static final String TOPIC = "connect-log";
+    static final TopicPartition TP0 = new TopicPartition(TOPIC, 0);
+    static final TopicPartition TP1 = new TopicPartition(TOPIC, 1);
+
+    File logDir;
+
+    private List<LogSegment> createdSegments;
+
     @Before
     public void setUp() {
         logDir = TestUtils.tempDir();
+        createdSegments = new ArrayList<>();
     }
 
     @After
     public void tearDown() {
         try {
+            for (LogSegment createdSegment : createdSegments) {
+                createdSegment.close();
+            }
             Utils.delete(logDir);
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -78,7 +91,9 @@ class S3RemoteStorageManagerTestBase {
     }
 
     LogSegment createLogSegment(long offset) {
-        return LogUtils.createSegment(offset, logDir, 4096, Time.SYSTEM);
+        LogSegment segment = LogUtils.createSegment(offset, logDir, 4096, Time.SYSTEM);
+        createdSegments.add(segment);
+        return segment;
     }
 
     void appendRecordBatch(LogSegment segment, long offset, int recordSize, int numRecords) {
