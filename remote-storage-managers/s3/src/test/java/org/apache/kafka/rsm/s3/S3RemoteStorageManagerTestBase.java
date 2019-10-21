@@ -22,6 +22,7 @@ import java.text.NumberFormat;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.amazonaws.auth.*;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -71,6 +72,8 @@ class S3RemoteStorageManagerTestBase {
     Map<String, String> basicProps(String bucket) {
         Map<String, String> props = new HashMap<>();
         props.put(S3RemoteStorageManagerConfig.S3_BUCKET_NAME_CONFIG, bucket);
+        props.put(S3RemoteStorageManagerConfig.S3_CREDENTIALS_PROVIDER_CLASS_CONFIG,
+                AnonymousCredentialsProvider.class.getName());
         return props;
     }
 
@@ -114,5 +117,17 @@ class S3RemoteStorageManagerTestBase {
             Log.filenamePrefixFromOffset(baseOffset) + "-" +
             Log.filenamePrefixFromOffset(lastOffset) +
             "-le" + LEADER_EPOCH_FORMAT.format(leaderEpoch);
+    }
+
+    static class AnonymousCredentialsProvider implements AWSCredentialsProvider {
+        @Override
+        public AWSCredentials getCredentials() {
+            return new BasicAWSCredentials("foo", "bar");
+        }
+
+        @Override
+        public void refresh() {
+
+        }
     }
 }

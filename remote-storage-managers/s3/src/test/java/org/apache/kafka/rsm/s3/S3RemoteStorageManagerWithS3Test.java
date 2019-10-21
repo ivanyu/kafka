@@ -75,6 +75,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     @BeforeClass
     public static void setUpClass() {
         s3Client = AmazonS3ClientBuilder.standard()
+            .withCredentials(new AnonymousCredentialsProvider())
             .withEndpointConfiguration(localstack.getEndpointConfiguration(S3))
             .build();
     }
