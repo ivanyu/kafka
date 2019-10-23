@@ -36,6 +36,8 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
 
     @Before
     public void setUp() {
+        super.setUp();
+
         Map<String, String> props = basicProps("does-not-matter");
         props.put(S3RemoteStorageManagerConfig.INDEX_INTERVAL_BYTES_CONFIG, "1");
         remoteStorageManager = new S3RemoteStorageManager(
@@ -59,7 +61,7 @@ public class S3RemoteStorageManagerWithoutS3Test extends S3RemoteStorageManagerT
         segment.onBecomeInactiveSegment();
 
         Throwable e = assertThrows(KafkaException.class, () -> remoteStorageManager.copyLogSegment(TP0, segment, 0));
-        assertEquals(e.getMessage(), "Error copying files for " + segment + " in " + TP0);
+        assertEquals(e.getMessage(), "Error uploading files for " + segment + " in " + TP0 + " with leader epoch 0");
     }
 
     @Test
