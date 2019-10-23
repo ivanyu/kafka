@@ -1969,8 +1969,6 @@ project(':remote-storage-managers:s3') {
     testCompile project(':core').sourceSets.test.output
     testCompile project(':clients').sourceSets.test.output
     testCompile libs.easymock
-    testCompile libs.powermockJunit4
-    testCompile libs.powermockEasymock
     testCompile libs.hamcrest
     testRuntime libs.slf4jlog4j
   }

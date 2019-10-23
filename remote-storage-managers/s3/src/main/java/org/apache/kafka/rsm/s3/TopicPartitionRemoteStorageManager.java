@@ -27,7 +27,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.apache.kafka.common.KafkaException;
@@ -77,8 +76,6 @@ class TopicPartitionRemoteStorageManager {
 
     private final Integer maxKeys;
     private final int indexIntervalBytes;
-
-    private final AtomicReference<TopicPartitionUploading> ongoingUploadings = new AtomicReference<>();
 
     TopicPartitionRemoteStorageManager(TopicPartition topicPartition,
                                        String bucket,
@@ -134,9 +131,6 @@ class TopicPartitionRemoteStorageManager {
         // TODO use e-tag to not overwrite with the same content (fix the doc also)
 
         // There are no concurrent calls per topic-partition.
-        if (ongoingUploadings.get() != null) {
-            throw new IllegalStateException("Already ongoing uploading for " + topicPartition);
-        }
 
         if (logSegment.size() == 0) {
             throw new AssertionError("Log segment size must be > 0");
@@ -144,19 +138,7 @@ class TopicPartitionRemoteStorageManager {
 
         TopicPartitionUploading uploading = new TopicPartitionUploading(
             topicPartition, leaderEpoch, logSegment, bucket, transferManager, indexIntervalBytes);
-        ongoingUploadings.set(uploading);
-        try {
-            return uploading.upload();
-        } finally {
-            ongoingUploadings.set(null);
-        }
-    }
-
-    void cancelUploadingLogSegment() {
-        TopicPartitionUploading uploading = ongoingUploadings.getAndSet(null);
-        if (uploading != null) {
-            uploading.cancel();
-        }
+        return uploading.upload();
     }
 
     List<RemoteLogSegmentInfo> listRemoteSegments(long minBaseOffset) throws IOException {
@@ -209,11 +191,7 @@ class TopicPartitionRemoteStorageManager {
             throw new KafkaException("Error listing remote segments in " + topicPartition + " with min base offset " + minBaseOffset, e);
         }
 
-        // No need to explicitly sort the result on our side.
-        // According to the AWS documentation (https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html),
-        // "Amazon S3 lists objects in UTF-8 character encoding in lexicographical order."
-        // Of course, it's safer just to sort. However, we rely on this ordering pretty heavily in other parts
-        // and if it's broken in AWS for some reason the whole implementation is broken anyway.
+        // No need to explicitly sort the result on our side, we rely on S3 returning in the lexicographical older.
         return result;
     }
 
@@ -535,7 +513,6 @@ class TopicPartitionRemoteStorageManager {
     }
 
     void close() {
-        cancelUploadingLogSegment();
     }
 
     private static String topicPartitionDirectory(TopicPartition topicPartition) {

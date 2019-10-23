@@ -192,11 +192,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     }
 
     @Override
-    public void cancelCopyingLogSegment(TopicPartition topicPartition) {
-        topicPartitionManager(topicPartition).cancelUploadingLogSegment();
-    }
-
-    @Override
     public List<RemoteLogSegmentInfo> listRemoteSegments(TopicPartition topicPartition) throws IOException {
         return listRemoteSegments(topicPartition, 0);
     }

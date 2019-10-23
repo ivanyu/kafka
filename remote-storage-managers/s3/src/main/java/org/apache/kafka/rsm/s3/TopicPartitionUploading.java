@@ -21,10 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CancellationException;
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
@@ -63,12 +60,6 @@ class TopicPartitionUploading {
     private final long baseOffset;
     private final long lastOffset;
     private final List<RemoteLogIndexEntry> remoteLogIndexEntries;
-
-    // TODO document locking / concurrency
-    // TODO test locking / concurrency
-    private final Object lock = new Object();
-    private boolean cancelled = false;
-    private volatile List<Upload> uploads = Collections.emptyList();
 
     private static final InputStream EMPTY_INPUT_STREAM = new InputStream() {
         @Override
@@ -114,42 +105,17 @@ class TopicPartitionUploading {
         try {
             // Upload last modified reverse index entry in the first place to make
             // the other files visible for cleaning of old segments even in case of a partial upload.
-            synchronized(lock) {
-                if (cancelled) {
-                    throwSegmentUploadingInterruptedException(null);
-                }
+            Upload lastModifiedReverseIndexFileUpload = uploadLastModifiedReverseIndexFile(logSegment);
+            waitForUploads(lastModifiedReverseIndexFileUpload);
 
-                Upload lastModifiedReverseIndexFileUpload = uploadLastModifiedReverseIndexFile(logSegment);
-                uploads = Collections.singletonList(lastModifiedReverseIndexFileUpload);
-            }
-
-            waitForAllUploads();
-
-            synchronized(lock) {
-                if (cancelled) {
-                    throwSegmentUploadingInterruptedException(null);
-                }
-
-                Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
-                Upload timeIndexFileUpload = uploadTimeIndexLogFile(logSegment);
-                Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
-                uploads = Arrays.asList(
-                    offsetIndexFileUpload, timeIndexFileUpload, remoteLogIndexUpload
-                );
-            }
-
-            waitForAllUploads();
+            Upload offsetIndexFileUpload = uploadOffsetIndexLogFile(logSegment);
+            Upload timeIndexFileUpload = uploadTimeIndexLogFile(logSegment);
+            Upload remoteLogIndexUpload = uploadRemoteLogIndex(remoteLogIndexEntries);
+            waitForUploads(offsetIndexFileUpload, timeIndexFileUpload, remoteLogIndexUpload);
 
             // Upload the log file in the end to mark that upload is completed.
-            synchronized(lock) {
-                if (cancelled) {
-                    throwSegmentUploadingInterruptedException(null);
-                }
-                Upload logFileUpload = uploadLogFile(logSegment);
-                uploads = Collections.singletonList(logFileUpload);
-            }
-
-            waitForAllUploads();
+            Upload logFileUpload = uploadLogFile(logSegment);
+            waitForUploads(logFileUpload);
 
             // TODO clean up in case of interruption
 
@@ -214,41 +180,17 @@ class TopicPartitionUploading {
         return transferManager.upload(bucketName, key, EMPTY_INPUT_STREAM, metadata);
     }
 
-    private void waitForAllUploads() {
+    private void waitForUploads(Upload ... uploads) {
         try {
             for (Upload upload : uploads) {
                 upload.waitForUploadResult();
             }
-        } catch (InterruptedException | CancellationException e) {
-            throwSegmentUploadingInterruptedException(e);
+        } catch (InterruptedException e) {
+            String message = "Uploading of segment " + logSegment +
+                    " for topic-partition " + topicPartition +
+                    " in lead epoch " + leaderEpoch +
+                    " interrupted";
+            throw new KafkaException(message, e);
         }
-    }
-
-    void cancel() {
-        synchronized (lock) {
-            if (!cancelled) {
-                log.debug("[{}] Cancelling uploads", logPrefix);
-                cancelled = true;
-                for (Upload upload : uploads) {
-                    upload.abort();
-                }
-            } else {
-                log.debug("[{}] Already cancelled", logPrefix);
-            }
-        }
-    }
-
-    private void throwSegmentUploadingInterruptedException(Throwable cause) {
-        String message = "Uploading of segment " + logSegment +
-            " for topic-partition " + topicPartition +
-            " in lead epoch " + leaderEpoch +
-            " interrupted";
-        KafkaException ex;
-        if (cause != null) {
-            ex = new KafkaException(message, cause);
-        } else {
-            ex = new KafkaException(message);
-        }
-        throw ex;
     }
 }
