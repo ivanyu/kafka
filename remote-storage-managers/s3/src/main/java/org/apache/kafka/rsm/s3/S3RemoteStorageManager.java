@@ -41,8 +41,10 @@ import org.slf4j.LoggerFactory;
  * {@link RemoteStorageManager} implementation backed by AWS S3.
  *
  * <p>This implementation relies heavily on S3's ability to list objects with a prefix and its guarantee to
- * list objects in the lexicographical order, also optionally returning only keys that lexicographically come
- * after a specified key (even non-existing).
+ * list objects in the lexicographical order (from the
+ * <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html">documentation</a>:
+ * "Amazon S3 lists objects in UTF-8 character encoding in lexicographical order."),
+ * also optionally returning only keys that lexicographically come after a specified key (even non-existing).
  *
  * <p>S3 has important limitations in the context of this implementation:
  * <ul>
