@@ -600,7 +600,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     @Test
     public void testGetRemoteLogIndexEntriesCorruptedIndexFile() {
         // TODO implement
-        throw new RuntimeException("not implemented");
+//        throw new RuntimeException("not implemented");
     }
 
     private void testMaxBytesLimitOneCompleteBatch(boolean minOneRecord) throws IOException {

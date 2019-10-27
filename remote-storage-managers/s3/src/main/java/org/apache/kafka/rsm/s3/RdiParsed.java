@@ -31,11 +31,11 @@ final class RdiParsed {
         this.position = Integer.parseInt(m.group(2));
     }
 
-    final String getS3Key() {
+    final String s3Key() {
         return s3Key;
     }
 
-    final int getPosition() {
+    final int position() {
         return position;
     }
 

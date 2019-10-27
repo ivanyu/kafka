@@ -46,7 +46,7 @@ public class S3RemoteStorageManagerConfigTest {
         Map<String, String> props = new HashMap<>();
         props.put("s3.bucket.name", "test");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertEquals("test", config.getS3BucketName());
+        assertEquals("test", config.s3BucketName());
     }
 
     @Test(expected = ConfigException.class)
@@ -62,7 +62,7 @@ public class S3RemoteStorageManagerConfigTest {
         Map<String, String> props = new HashMap<>();
         props.put("s3.bucket.name", "test");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertEquals(Regions.DEFAULT_REGION, config.getS3Region());
+        assertEquals(Regions.DEFAULT_REGION, config.s3Region());
     }
 
     @Test
@@ -71,7 +71,7 @@ public class S3RemoteStorageManagerConfigTest {
         props.put("s3.bucket.name", "test");
         props.put("s3.region", "eu-central-1");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertEquals(Regions.EU_CENTRAL_1, config.getS3Region());
+        assertEquals(Regions.EU_CENTRAL_1, config.s3Region());
     }
 
     @Test(expected = ConfigException.class)
@@ -95,7 +95,7 @@ public class S3RemoteStorageManagerConfigTest {
         Map<String, String> props = new HashMap<>();
         props.put("s3.bucket.name", "test");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertNull(config.getAwsCredentialsProvider());
+        assertNull(config.awsCredentialsProvider());
     }
 
     @Test
@@ -104,7 +104,7 @@ public class S3RemoteStorageManagerConfigTest {
         props.put("s3.bucket.name", "test");
         props.put("s3.credentials.provider.class", "com.amazonaws.auth.SystemPropertiesCredentialsProvider");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertTrue(config.getAwsCredentialsProvider() instanceof com.amazonaws.auth.SystemPropertiesCredentialsProvider);
+        assertTrue(config.awsCredentialsProvider() instanceof com.amazonaws.auth.SystemPropertiesCredentialsProvider);
     }
 
     @Test(expected = ConfigException.class)
@@ -120,7 +120,7 @@ public class S3RemoteStorageManagerConfigTest {
         Map<String, String> props = new HashMap<>();
         props.put("s3.bucket.name", "test");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertEquals(1024 * 1024, config.getIndexIntervalBytes());
+        assertEquals(1024 * 1024, config.indexIntervalBytes());
     }
 
     @Test
@@ -129,6 +129,6 @@ public class S3RemoteStorageManagerConfigTest {
         props.put("s3.bucket.name", "test");
         props.put("index.interval.bytes", "100");
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(props);
-        assertEquals(100, config.getIndexIntervalBytes());
+        assertEquals(100, config.indexIntervalBytes());
     }
 }

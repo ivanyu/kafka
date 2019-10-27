@@ -168,22 +168,22 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     @Override
     public void configure(Map<String, ?> configs) {
         S3RemoteStorageManagerConfig config = new S3RemoteStorageManagerConfig(configs);
-        this.bucket = config.getS3BucketName();
+        this.bucket = config.s3BucketName();
 
         AmazonS3ClientBuilder s3ClientBuilder = AmazonS3ClientBuilder.standard();
         if (this.endpointConfiguration == null) {
-            s3ClientBuilder = s3ClientBuilder.withRegion(config.getS3Region());
+            s3ClientBuilder = s3ClientBuilder.withRegion(config.s3Region());
         } else {
             s3ClientBuilder = s3ClientBuilder.withEndpointConfiguration(endpointConfiguration);
         }
 
         // It's fine to pass null in here.
-        s3ClientBuilder.setCredentials(config.getAwsCredentialsProvider());
+        s3ClientBuilder.setCredentials(config.awsCredentialsProvider());
 
         s3Client = s3ClientBuilder.build();
         transferManager = TransferManagerBuilder.standard().withS3Client(s3Client).build();
 
-        this.indexIntervalBytes = config.getIndexIntervalBytes();
+        this.indexIntervalBytes = config.indexIntervalBytes();
     }
 
     @Override
@@ -235,7 +235,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         long startOffset,
                         boolean minOneMessage) throws IOException {
         RdiParsed rdiParsed = new RdiParsed(remoteLogIndexEntry.rdi());
-        TopicPartition topicPartition = LogFileKey.getTopicPartition(rdiParsed.getS3Key());
+        TopicPartition topicPartition = LogFileKey.topicPartition(rdiParsed.s3Key());
         return topicPartitionManager(topicPartition)
             .read(remoteLogIndexEntry, maxBytes, startOffset, minOneMessage);
     }

@@ -490,8 +490,8 @@ class TopicPartitionRemoteStorageManager {
     private ByteBuffer readBytes(RemoteLogIndexEntry remoteLogIndexEntry) throws IOException {
         RdiParsed rdiParsed = new RdiParsed(remoteLogIndexEntry.rdi());
 
-        String s3Key = rdiParsed.getS3Key();
-        int position = rdiParsed.getPosition();
+        String s3Key = rdiParsed.s3Key();
+        int position = rdiParsed.position();
         log.debug("[{}] S3 key: {}, position: {}", logPrefix, s3Key, position);
 
         // TODO what if dataLength() is incorrect? (what happens when range request is longer than data?)

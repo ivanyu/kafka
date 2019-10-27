@@ -96,11 +96,11 @@ public class S3RemoteStorageManagerConfig extends AbstractConfig {
         super(CONFIG, props);
     }
 
-    public String getS3BucketName() {
+    public String s3BucketName() {
         return getString(S3_BUCKET_NAME_CONFIG);
     }
 
-    public Regions getS3Region() {
+    public Regions s3Region() {
         String regionStr = getString(S3_REGION_CONFIG);
         if (regionStr == null) {
             return null;
@@ -108,7 +108,7 @@ public class S3RemoteStorageManagerConfig extends AbstractConfig {
         return Regions.fromName(regionStr);
     }
 
-    public AWSCredentialsProvider getAwsCredentialsProvider() {
+    public AWSCredentialsProvider awsCredentialsProvider() {
         try {
             @SuppressWarnings("unchecked")
             Class<? extends AWSCredentialsProvider> providerClass = (Class<? extends AWSCredentialsProvider>)
@@ -122,7 +122,7 @@ public class S3RemoteStorageManagerConfig extends AbstractConfig {
         }
     }
 
-    public int getIndexIntervalBytes() {
+    public int indexIntervalBytes() {
         return getInt(INDEX_INTERVAL_BYTES_CONFIG);
     }
 

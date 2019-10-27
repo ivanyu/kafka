@@ -28,7 +28,7 @@ public class LogFileKey extends Key {
         return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR;
     }
 
-    public static TopicPartition getTopicPartition(String s3Key) {
+    public static TopicPartition topicPartition(String s3Key) {
         Matcher matcher = TOPIC_PARTITION_PATTERN.matcher(s3Key);
         if (!matcher.matches()) {
             throw new IllegalArgumentException("Can't extract topic-partition from S3 key " + s3Key);
