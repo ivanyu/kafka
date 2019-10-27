@@ -54,6 +54,8 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * The implementation tries to mitigate this, which will be described below.
  *
+ * <p>Remote Data Identifier (RDI) is presented as {@code {s3-key}#{byte-offset}}.
+ *
  * <p>Files on remote storage might be deleted or overwritten with the same content,
  * but never overwritten with different content.
  *
@@ -121,11 +123,14 @@ import org.slf4j.LoggerFactory;
  * In this implementation, there are no operations in which this can't be overcome by some reasonable retry policy.
  * TODO: double check and confirm this.
  *
- * <p>TODO: multiple leader epochs and their priority (earlier has priority)
+ * <p>Sometimes two brokers can think of themselves to be the leader of a partition.
+ * It's also not impossible for them to simultaneously try to upload files from a log segment.
+ * To break this tie, each file uploaded to the remote tier is suffixed with the leader epoch number.
+ * During the read time, the file set with the lower leader epoch number will be used.
+ * This will not leave garbage on the remote tier, because
+ * {@link S3RemoteStorageManager#cleanupLogUntil(TopicPartition, long)} will collect files to be deleted
+ * without taking the leader epoch number into consideration.
  *
- * <p>TODO: RDI format
- *
- * <p>
  */
 public class S3RemoteStorageManager implements RemoteStorageManager {
 
@@ -137,7 +142,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     // TODO garbage collection in S3 (orphan files, etc)
 
-    // TODO bucket migration (moving files and everything should work)
+    // TODO bucket migration (moving files between buckets)
 
     // for testing
     private Integer maxKeys = null;
