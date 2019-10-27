@@ -1960,11 +1960,11 @@ project(':remote-storage-managers:s3') {
   archivesBaseName = "kafka-rsm-s3"
 
   dependencies {
-    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.605'
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.659'
     compile project(':core')
 
     testCompile libs.junit
-    testCompile group: 'org.testcontainers', name: 'localstack', version: '1.12.1'
+    testCompile group: 'org.testcontainers', name: 'localstack', version: '1.12.3'
     testCompile project(':core')
     testCompile project(':core').sourceSets.test.output
     testCompile project(':clients').sourceSets.test.output
