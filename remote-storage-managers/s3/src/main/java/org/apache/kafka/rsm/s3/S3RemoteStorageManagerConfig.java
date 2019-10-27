@@ -134,7 +134,7 @@ public class S3RemoteStorageManagerConfig extends AbstractConfig {
                 throw new ConfigException(name, value);
             }
 
-            String regionStr = ((String) value);
+            String regionStr = (String) value;
             try {
                 Regions.fromName(regionStr);
             } catch (IllegalArgumentException e) {

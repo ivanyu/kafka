@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.amazonaws.auth.*;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -36,6 +35,9 @@ import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
 import kafka.log.Log;
 import kafka.log.LogSegment;
 import kafka.log.LogUtils;
@@ -49,7 +51,7 @@ class S3RemoteStorageManagerTestBase {
 
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManagerTestBase.class);
 
-    private static NumberFormat LEADER_EPOCH_FORMAT = NumberFormat.getInstance();
+    private static final NumberFormat LEADER_EPOCH_FORMAT = NumberFormat.getInstance();
     static {
         LEADER_EPOCH_FORMAT.setMinimumIntegerDigits(10);
         LEADER_EPOCH_FORMAT.setMaximumFractionDigits(0);

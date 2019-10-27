@@ -250,7 +250,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private TopicPartitionRemoteStorageManager topicPartitionManager(TopicPartition topicPartition) {
         return topicPartitionManagers.computeIfAbsent(topicPartition,
-            (tp) -> new TopicPartitionRemoteStorageManager(
+            tp -> new TopicPartitionRemoteStorageManager(
                 tp, bucket, s3Client, transferManager, maxKeys, indexIntervalBytes
             )
         );

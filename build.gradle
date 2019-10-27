@@ -1878,6 +1878,35 @@ project(':remote-storage-managers:hdfs') {
   }
 }
 
+project(':remote-storage-managers:s3') {
+  archivesBaseName = "kafka-rsm-s3"
+
+  dependencies {
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.659'
+    compile project(':core')
+
+    testCompile libs.junit
+    testCompile group: 'org.testcontainers', name: 'localstack', version: '1.12.3'
+    testCompile project(':core')
+    testCompile project(':core').sourceSets.test.output
+    testCompile project(':clients').sourceSets.test.output
+    testCompile libs.easymock
+    testCompile libs.hamcrest
+    testRuntime libs.slf4jlog4j
+  }
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-remote-storage-managers-s3.xml")
+  }
+
+  tasks.create(name: "copyDependantLibs", type: Copy) {
+    from(configurations.runtime) {
+      exclude('kafka-rsm-s3*')
+    }
+    into "$buildDir/dependant-libs-${versions.scala}"
+  }
+}
+
 project(':connect:mirror') {
   archivesBaseName = "connect-mirror"
 
@@ -1953,40 +1982,6 @@ project(':connect:mirror-client') {
 
   jar {
     dependsOn copyDependantLibs
-  }
-}
-
-project(':remote-storage-managers:s3') {
-  archivesBaseName = "kafka-rsm-s3"
-
-  dependencies {
-    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.659'
-    compile project(':core')
-
-    testCompile libs.junit
-    testCompile group: 'org.testcontainers', name: 'localstack', version: '1.12.3'
-    testCompile project(':core')
-    testCompile project(':core').sourceSets.test.output
-    testCompile project(':clients').sourceSets.test.output
-    testCompile libs.easymock
-    testCompile libs.hamcrest
-    testRuntime libs.slf4jlog4j
-  }
-
-  tasks.create(name: "copyDependantLibs", type: Copy) {
-    from(configurations.runtime) {
-      exclude('kafka-rsm-s3*')
-    }
-    into "$buildDir/dependant-libs-${versions.scala}"
-    duplicatesStrategy 'exclude'
-  }
-
-  jar {
-    dependsOn copyDependantLibs
-  }
-
-  javadoc {
-    enabled = false
   }
 }
 

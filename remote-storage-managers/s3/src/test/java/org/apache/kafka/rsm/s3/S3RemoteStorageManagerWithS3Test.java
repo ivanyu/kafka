@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -59,9 +60,9 @@ import static org.testcontainers.containers.localstack.LocalStackContainer.Servi
 
 public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTestBase {
 
-    private int NORMAL_RECORD_SIZE = 20;
-    private int NORMAL_BATCH_RECORD_COUNT = 10;
-    private int CONTROL_BATCH_RECORD_COUNT = 1;
+    private static final int NORMAL_RECORD_SIZE = 20;
+    private static final int NORMAL_BATCH_RECORD_COUNT = 10;
+    private static final int CONTROL_BATCH_RECORD_COUNT = 1;
 
     private Long segmentFileLastModified = null;
 
@@ -83,7 +84,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     @Before
     public void setUp() {
         super.setUp();
-        bucket = TestUtils.randomString(10).toLowerCase();
+        bucket = TestUtils.randomString(10).toLowerCase(Locale.ROOT);
         s3Client.createBucket(bucket);
         remoteStorageManager = new S3RemoteStorageManager(localstack.getEndpointConfiguration(S3), 2);
     }
@@ -210,8 +211,8 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
         props.put(S3RemoteStorageManagerConfig.INDEX_INTERVAL_BYTES_CONFIG, Integer.toString(Integer.MAX_VALUE));
         remoteStorageManager.configure(props);
 
-        remoteStorageManager.copyLogSegment(TP0, segment1,0);
-        remoteStorageManager.copyLogSegment(TP0, segment1,0);
+        remoteStorageManager.copyLogSegment(TP0, segment1, 0);
+        remoteStorageManager.copyLogSegment(TP0, segment1, 0);
 
         List<String> keys = listS3Keys();
         assertThat(keys, containsInAnyOrder(
@@ -481,7 +482,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             LogSegment segment = createLogSegment(offset);
             appendRecordBatch(segment, offset, 100, recordsInSegment);
             segment.onBecomeInactiveSegment();
-            remoteStorageManager.copyLogSegment(TP0, segment,0);
+            remoteStorageManager.copyLogSegment(TP0, segment, 0);
         }
 
         List<RemoteLogSegmentInfo> allRemoteSegments = remoteStorageManager.listRemoteSegments(TP0);
@@ -514,8 +515,8 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             LogSegment segment = createLogSegment(offset);
             appendRecordBatch(segment, offset, 100, recordsInSegment);
             segment.onBecomeInactiveSegment();
-            remoteStorageManager.copyLogSegment(TP0, segment,0);
-            remoteStorageManager.copyLogSegment(TP0, segment,1);
+            remoteStorageManager.copyLogSegment(TP0, segment, 0);
+            remoteStorageManager.copyLogSegment(TP0, segment, 1);
         }
         List<RemoteLogSegmentInfo> allRemoteSegments = remoteStorageManager.listRemoteSegments(TP0);
         assertEquals(numSegments, allRemoteSegments.size());

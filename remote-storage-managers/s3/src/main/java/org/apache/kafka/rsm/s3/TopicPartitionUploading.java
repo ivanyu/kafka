@@ -93,7 +93,7 @@ class TopicPartitionUploading {
         remoteLogIndexEntries = RemoteLogIndexer.index(
             logSegment.log().batches(),
             indexIntervalBytes,
-            (firstBatch) ->
+            firstBatch ->
                 RdiParsed.createRDI(
                     LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch),
                     firstBatch.position()
@@ -180,7 +180,7 @@ class TopicPartitionUploading {
         return transferManager.upload(bucketName, key, EMPTY_INPUT_STREAM, metadata);
     }
 
-    private void waitForUploads(Upload ... uploads) {
+    private void waitForUploads(Upload... uploads) {
         try {
             for (Upload upload : uploads) {
                 upload.waitForUploadResult();
