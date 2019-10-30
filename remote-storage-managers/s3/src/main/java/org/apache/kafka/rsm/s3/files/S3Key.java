@@ -31,7 +31,7 @@ abstract class S3Key {
     static final String DIRECTORY_SEPARATOR = "/";
 
     private static final Pattern TOPIC_PARTITION_PATTERN =
-            Pattern.compile("([^/])+-(\\d)+?" + DIRECTORY_SEPARATOR + ".*");
+            Pattern.compile("([^/]+)-(\\d+?)" + DIRECTORY_SEPARATOR + ".*");
 
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getInstance();
     static {

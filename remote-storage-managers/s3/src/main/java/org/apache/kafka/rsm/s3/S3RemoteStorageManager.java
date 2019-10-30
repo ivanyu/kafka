@@ -18,17 +18,36 @@ package org.apache.kafka.rsm.s3;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.amazonaws.SdkClientException;
-import com.amazonaws.services.s3.model.*;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.record.*;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.rsm.s3.files.*;
 
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
@@ -39,6 +58,12 @@ import kafka.log.LogSegment;
 import kafka.log.remote.RemoteLogIndexEntry;
 import kafka.log.remote.RemoteLogSegmentInfo;
 import kafka.log.remote.RemoteStorageManager;
+import org.apache.kafka.rsm.s3.files.LastModifiedReverseIndexEntry;
+import org.apache.kafka.rsm.s3.files.LogFileS3Key;
+import org.apache.kafka.rsm.s3.files.OffsetIndexFileKeyS3Key;
+import org.apache.kafka.rsm.s3.files.RemoteLogIndexFileKeyS3Key;
+import org.apache.kafka.rsm.s3.files.SegmentInfo;
+import org.apache.kafka.rsm.s3.files.TimeIndexFileKeyS3Key;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
@@ -519,9 +544,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         int maxBytes,
                         long startOffset,
                         boolean minOneMessage) throws IOException {
-        S3RDI s3RDI = new S3RDI(remoteLogIndexEntry.rdi());
-        TopicPartition topicPartition = LogFileS3Key.topicPartition(s3RDI.s3Key());
-
         // TODO what to return in case nothing exists for this offset?
         // TODO test when segments marked for deletion
 
@@ -605,7 +627,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
 
     private ByteBuffer readBytes(RemoteLogIndexEntry remoteLogIndexEntry) throws IOException {
         S3RDI s3RDI = new S3RDI(remoteLogIndexEntry.rdi());
-
         String s3Key = s3RDI.s3Key();
         int position = s3RDI.position();
         log.debug("S3 key: {}, position: {}", s3Key, position);

@@ -80,4 +80,24 @@ public class SegmentInfo {
             return Objects.hash(baseOffset, lastOffset);
         }
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        SegmentInfo that = (SegmentInfo) o;
+        return baseOffset == that.baseOffset &&
+                lastOffset == that.lastOffset &&
+                leaderEpoch == that.leaderEpoch &&
+                Objects.equals(topicPartition, that.topicPartition);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(topicPartition, baseOffset, lastOffset, leaderEpoch);
+    }
 }
