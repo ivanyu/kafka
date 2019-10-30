@@ -14,26 +14,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3;
+package org.apache.kafka.rsm.s3.files;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import org.apache.kafka.common.TopicPartition;
 
-final class SegmentInfo {
-    private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d+)");
+import java.util.Objects;
 
+public class SegmentInfo {
+    private final TopicPartition topicPartition;
     private final long baseOffset;
     private final long lastOffset;
     private final int leaderEpoch;
 
-    private final OffsetPair offsetPair;
-
-    private SegmentInfo(long baseOffset, long lastOffset, int leaderEpoch) {
+    SegmentInfo(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
+        this.topicPartition = topicPartition;
         this.baseOffset = baseOffset;
         this.lastOffset = lastOffset;
         this.leaderEpoch = leaderEpoch;
+    }
 
-        this.offsetPair = new OffsetPair(baseOffset, lastOffset);
+    public TopicPartition topicPartition() {
+        return topicPartition;
     }
 
     public long baseOffset() {
@@ -49,22 +50,34 @@ final class SegmentInfo {
     }
 
     public OffsetPair offsetPair() {
-        return offsetPair;
+        return new OffsetPair();
     }
 
-    /**
-     * Parses a segment info string in the format {@code {base offset}-{last offset}-le{leader epoch}}.
-     * @throws IllegalArgumentException if the format is incorrect.
-     */
-    public static SegmentInfo parse(String coordinatesStr) {
-        Matcher m = NAME_PATTERN.matcher(coordinatesStr);
-        if (m.matches()) {
-            long baseOffset = Long.parseLong(m.group(1));
-            long lastOffset = Long.parseLong(m.group(2));
-            int leaderEpoch = Integer.parseInt(m.group(3));
-            return new SegmentInfo(baseOffset, lastOffset, leaderEpoch);
-        } else {
-            throw new IllegalArgumentException("Invalid segment info format: " + coordinatesStr);
+    public final class OffsetPair {
+        public long baseOffset() {
+            return baseOffset;
+        }
+
+        public long lastOffset() {
+            return lastOffset;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            OffsetPair that = (OffsetPair) o;
+            return baseOffset() == that.baseOffset() &&
+                    lastOffset() == that.lastOffset();
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(baseOffset, lastOffset);
         }
     }
 }

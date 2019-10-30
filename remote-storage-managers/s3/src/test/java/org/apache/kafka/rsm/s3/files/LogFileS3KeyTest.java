@@ -14,24 +14,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3.keys;
+package org.apache.kafka.rsm.s3.files;
 
 import org.apache.kafka.common.TopicPartition;
+import org.junit.Test;
 
-public class LastModifiedReverseIndexKey extends Key {
-    private static final String DIRECTORY = "last-modified-reverse-index";
+import static org.junit.Assert.assertEquals;
 
-    private LastModifiedReverseIndexKey() {}
-
-    public static String key(TopicPartition topicPartition, long lastModifiedMs, long baseOffset, long lastOffset, int leaderEpoch) {
-        return directoryPrefix(topicPartition)
-                + formatLong(lastModifiedMs) + "-"
-                + formatLong(baseOffset) + "-"
-                + formatLong(lastOffset) + "-le"
-                + formalInteger(leaderEpoch);
+public class LogFileS3KeyTest {
+    @Test
+    public void testParse() {
+        SegmentInfo expected = new SegmentInfo(
+                new TopicPartition("some-topic", 777), 0L, 123L, 7
+        );
+        SegmentInfo parsed = LogFileS3Key.parse(
+                "some-topic-777/log/" +
+                        "00000000000000000000-00000000000000000123-le0000000007");
+        assertEquals(expected, parsed);
     }
 
-    public static String directoryPrefix(TopicPartition topicPartition) {
-        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR;
+    @Test
+    public void testOffsetPair() {
+        SegmentInfo segmentInfo = new SegmentInfo(
+                new TopicPartition("some-topic", 777), 0L, 123L, 7
+        );
+        assertEquals(0L, segmentInfo.offsetPair().baseOffset());
+        assertEquals(123L, segmentInfo.offsetPair().lastOffset());
     }
 }

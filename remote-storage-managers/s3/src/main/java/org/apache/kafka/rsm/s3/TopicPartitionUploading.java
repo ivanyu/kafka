@@ -25,11 +25,11 @@ import java.util.List;
 
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.rsm.s3.keys.LastModifiedReverseIndexKey;
-import org.apache.kafka.rsm.s3.keys.LogFileKey;
-import org.apache.kafka.rsm.s3.keys.OffsetIndexFileKey;
-import org.apache.kafka.rsm.s3.keys.RemoteLogIndexFileKey;
-import org.apache.kafka.rsm.s3.keys.TimeIndexFileKey;
+import org.apache.kafka.rsm.s3.files.LastModifiedReverseIndexEntry;
+import org.apache.kafka.rsm.s3.files.LogFileS3Key;
+import org.apache.kafka.rsm.s3.files.OffsetIndexFileKeyS3Key;
+import org.apache.kafka.rsm.s3.files.RemoteLogIndexFileKeyS3Key;
+import org.apache.kafka.rsm.s3.files.TimeIndexFileKeyS3Key;
 
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.model.ObjectMetadata;
@@ -41,7 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Uploading of files that happen in a particular topic-partition.
+ * An uploading of files that happen in a particular topic-partition.
  */
 class TopicPartitionUploading {
 
@@ -94,8 +94,8 @@ class TopicPartitionUploading {
             logSegment.log().batches(),
             indexIntervalBytes,
             firstBatch ->
-                S3RDI.createRDI(
-                    LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch),
+                S3RDI.create(
+                    LogFileS3Key.key(topicPartition, baseOffset, lastOffset, leaderEpoch),
                     firstBatch.position()
                 )
         );
@@ -128,19 +128,19 @@ class TopicPartitionUploading {
     }
 
     private Upload uploadLogFile(LogSegment logSegment) {
-        final String key = LogFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        final String key = LogFileS3Key.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         log.debug("[{}] Uploading log file: {}", logPrefix, key);
         return uploadFile(key, logSegment.log().file());
     }
 
     private Upload uploadOffsetIndexLogFile(LogSegment logSegment) {
-        final String key = OffsetIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        final String key = OffsetIndexFileKeyS3Key.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         log.debug("[{}] Uploading offset index file: {}", logPrefix, key);
         return uploadFile(key, logSegment.offsetIndex().file());
     }
 
     private Upload uploadTimeIndexLogFile(LogSegment logSegment) {
-        final String key = TimeIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        final String key = TimeIndexFileKeyS3Key.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         log.debug("[{}] Uploading time index file: {}", logPrefix, key);
         return uploadFile(key, logSegment.timeIndex().file());
     }
@@ -150,14 +150,14 @@ class TopicPartitionUploading {
     }
 
     private Upload uploadLastModifiedReverseIndexFile(LogSegment logSegment) {
-        String key = LastModifiedReverseIndexKey.key(
+        String key = LastModifiedReverseIndexEntry.key(
             topicPartition, logSegment.lastModified(), baseOffset, lastOffset, leaderEpoch);
         log.debug("[{}] Uploading last modifier reverse index entry: {}", logPrefix, key);
         return uploadEmptyFile(key);
     }
 
     private Upload uploadRemoteLogIndex(List<RemoteLogIndexEntry> remoteLogIndexEntries) throws IOException {
-        String key = RemoteLogIndexFileKey.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
+        String key = RemoteLogIndexFileKeyS3Key.key(topicPartition, baseOffset, lastOffset, leaderEpoch);
         log.debug("[{}] Uploading remote index file: {}", logPrefix, key);
         int totalSize = 0;
         List<ByteBuffer> remoteLogIndexEntryBuffers = new ArrayList<>(remoteLogIndexEntries.size());

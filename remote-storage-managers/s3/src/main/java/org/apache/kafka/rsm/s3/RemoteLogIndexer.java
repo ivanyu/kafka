@@ -26,7 +26,7 @@ import kafka.log.remote.RDI;
 import kafka.log.remote.RemoteLogIndexEntry;
 
 /**
- * Create {@link RemoteLogIndexEntry}s of {@link FileChannelRecordBatch}es;
+ * Creates {@link RemoteLogIndexEntry}s from {@link FileChannelRecordBatch}es;
  */
 public class RemoteLogIndexer {
     private final int indexIntervalBytes;
@@ -95,8 +95,8 @@ public class RemoteLogIndexer {
      * @return the list of {@link RemoteLogIndexEntry} for the provided {@code recordBatches}.
      */
     public static List<RemoteLogIndexEntry> index(Iterable<FileChannelRecordBatch> recordBatches,
-                                                  int indexIntervalBytes,
-                                                  Function<FileChannelRecordBatch, RDI> createRDI) {
+                                                   int indexIntervalBytes,
+                                                   Function<FileChannelRecordBatch, RDI> createRDI) {
         RemoteLogIndexer instance = new RemoteLogIndexer(recordBatches, indexIntervalBytes, createRDI);
         return instance.result;
     }

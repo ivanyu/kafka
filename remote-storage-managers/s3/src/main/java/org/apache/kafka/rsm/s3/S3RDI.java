@@ -24,6 +24,11 @@ import kafka.log.remote.RDI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Remote Data Identifier ({@link RDI}) specific for S3.
+ *
+ * <p>The format is: {@code {s3-key}#{byte-offset}}.
+ */
 final class S3RDI {
 
     private static final Logger log = LoggerFactory.getLogger(S3RDI.class);
@@ -55,7 +60,7 @@ final class S3RDI {
         return position;
     }
 
-    static RDI createRDI(String s3Key, long position) {
+    static RDI create(String s3Key, long position) {
         return new RDI((s3Key + RDI_POSITION_SEPARATOR + position)
             .getBytes(StandardCharsets.UTF_8));
     }

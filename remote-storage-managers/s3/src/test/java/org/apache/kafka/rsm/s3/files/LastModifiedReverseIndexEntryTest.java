@@ -14,20 +14,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3.keys;
+package org.apache.kafka.rsm.s3.files;
 
 import org.apache.kafka.common.TopicPartition;
+import org.junit.Test;
 
-public class RemoteLogIndexFileKey extends Key {
-    private static final String DIRECTORY = "remote-log-index";
+import static org.junit.Assert.assertEquals;
 
-    private RemoteLogIndexFileKey() {}
-
-    public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
-        return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR
-            + formatLong(baseOffset)
-            + "-"
-            + formatLong(lastOffset)
-            + "-le" + formalInteger(leaderEpoch);
+public class LastModifiedReverseIndexEntryTest {
+    @Test
+    public void testParse() {
+        LastModifiedReverseIndexEntry expected = new LastModifiedReverseIndexEntry(
+                new TopicPartition("some-topic", 777), 1572407431L, 0L, 123L, 7
+        );
+        LastModifiedReverseIndexEntry parsed = LastModifiedReverseIndexEntry.parse(
+                "some-topic-777/last-modified-reverse-index/" +
+                        "00000000001572407431-00000000000000000000-00000000000000000123-le0000000007");
+        assertEquals(expected, parsed);
     }
 }

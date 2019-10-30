@@ -24,6 +24,12 @@ import java.util.List;
 
 import org.apache.kafka.common.utils.ByteBufferInputStream;
 
+/**
+ * An {@link InputStream} backed by multiple {@link ByteBuffer}s.
+ *
+ * <p>The class is similar to {@link ByteBufferInputStream}, but allows to read
+ * from multiple byte buffers as if they were one without copying.
+ */
 class GatheringByteBufferInputStream extends InputStream {
     // No need to close ByteBufferInputStream.
     private final LinkedList<ByteBufferInputStream> inputStreams;

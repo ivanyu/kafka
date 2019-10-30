@@ -14,14 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3.keys;
+package org.apache.kafka.rsm.s3.files;
 
 import org.apache.kafka.common.TopicPartition;
 
-public class OffsetIndexFileKey extends Key {
-    private static final String DIRECTORY = "index";
+/**
+ * A utility class to work with S3 keys for remote log index files.
+ */
+public class RemoteLogIndexFileKeyS3Key extends S3Key {
+    private static final String DIRECTORY = "remote-log-index";
 
-    private OffsetIndexFileKey() {}
+    private RemoteLogIndexFileKeyS3Key() {}
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR

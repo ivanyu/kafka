@@ -29,6 +29,9 @@ import java.util.Map;
 
 import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
 
+/**
+ * A configuration for {@link S3RemoteStorageManager}.
+ */
 public class S3RemoteStorageManagerConfig extends AbstractConfig {
     public static final String S3_BUCKET_NAME_CONFIG = "s3.bucket.name";
     private static final String S3_BUCKET_NAME_DOC = "The S3 Bucket.";

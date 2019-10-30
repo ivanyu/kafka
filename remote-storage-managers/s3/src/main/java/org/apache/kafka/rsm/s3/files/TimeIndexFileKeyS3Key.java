@@ -14,14 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3.keys;
+package org.apache.kafka.rsm.s3.files;
 
 import org.apache.kafka.common.TopicPartition;
 
-public class TimeIndexFileKey extends Key {
+/**
+ * A utility class to work with S3 keys for Kafka time index files.
+ */
+public class TimeIndexFileKeyS3Key extends S3Key {
     private static final String DIRECTORY = "time-index";
 
-    private TimeIndexFileKey() {}
+    private TimeIndexFileKeyS3Key() {}
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR

@@ -14,16 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.rsm.s3.keys;
+package org.apache.kafka.rsm.s3.files;
 
 import org.apache.kafka.common.TopicPartition;
 
 import kafka.log.Log;
 
 import java.text.NumberFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-abstract class Key {
+/**
+ * The base for S3 keys utility classes.
+ */
+abstract class S3Key {
     static final String DIRECTORY_SEPARATOR = "/";
+
+    private static final Pattern TOPIC_PARTITION_PATTERN =
+            Pattern.compile("([^/])+-(\\d)+?" + DIRECTORY_SEPARATOR + ".*");
 
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getInstance();
     static {
@@ -42,5 +50,16 @@ abstract class Key {
 
     static String topicPartitionDirectory(TopicPartition topicPartition) {
         return topicPartition.toString();
+    }
+
+    public static TopicPartition topicPartition(String s3Key) {
+        Matcher matcher = TOPIC_PARTITION_PATTERN.matcher(s3Key);
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException("Can't extract topic-partition from S3 key " + s3Key);
+        }
+
+        String topic = matcher.group(1);
+        int partition = Integer.parseInt(matcher.group(2));
+        return new TopicPartition(topic, partition);
     }
 }
