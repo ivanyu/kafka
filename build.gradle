@@ -868,7 +868,6 @@ project(':core') {
     from(configurations.archives.artifacts.files) { into("libs/") }
     from(project.siteDocsTar) { into("site-docs/") }
     from(project(':tools').jar) { into("libs/") }
-    from(project(':remote-storage-managers:hdfs').jar) { into("libs/") }
     from(project(':tools').configurations.runtime) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
     from(project(':connect:api').configurations.runtime) { into("libs/") }
@@ -894,10 +893,10 @@ project(':core') {
     from(project(':streams:test-utils').configurations.runtime) { into("libs/") }
     from(project(':streams:examples').jar) { into("libs/") }
     from(project(':streams:examples').configurations.runtime) { into("libs/") }
-    from(project(':remote-storage-managers:hdfs').jar) { into("libs/") }
-    from(project(':remote-storage-managers:hdfs').configurations.runtime) { into("libs/") }
-    from(project(':remote-storage-managers:s3').jar) { into("libs/") }
-    from(project(':remote-storage-managers:s3').configurations.runtime) { into("libs/") }
+    from(project(':remote-storage-managers:hdfs').jar) { into("external/hdfs/libs/") }
+    from(new File(project(':remote-storage-managers:hdfs').buildDir.toString(), "dependant-libs/")) { into("external/hdfs/libs/") }
+    from(project(':remote-storage-managers:s3').jar) { into("external/s3/libs/") }
+    from(new File(project(':remote-storage-managers:s3').buildDir.toString(), "dependant-libs/")) { into("external/s3/libs/") }
     duplicatesStrategy 'exclude'
   }
 
@@ -1851,8 +1850,13 @@ project(':connect:basic-auth-extension') {
 project(':remote-storage-managers:hdfs') {
   archivesBaseName = "kafka-rsm-hdfs"
 
+  configurations {
+    localDeps
+  }
+
   dependencies {
-    compile group: 'org.apache.hadoop', name: 'hadoop-client', version: '3.1.2'
+    localDeps group: 'org.apache.hadoop', name: 'hadoop-client', version: '3.1.2'
+    compile configurations.localDeps
     compile project(':core')
 
     testCompile libs.junit
@@ -1868,18 +1872,28 @@ project(':remote-storage-managers:hdfs') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
-    from(configurations.runtime) {
+    from(configurations.localDeps - project(':core').configurations.runtime - project(':tools').configurations.runtime) {
       exclude('kafka-rsm-hdfs*')
     }
-    into "$buildDir/dependant-libs-${versions.scala}"
+    into "$buildDir/dependant-libs"
+    duplicatesStrategy 'exclude'
+  }
+
+  jar {
+    dependsOn copyDependantLibs
   }
 }
 
 project(':remote-storage-managers:s3') {
   archivesBaseName = "kafka-rsm-s3"
 
+  configurations {
+    localDeps
+  }
+
   dependencies {
-    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.659'
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-s3', version: '1.11.667'
+    compile configurations.localDeps
     compile project(':core')
 
     testCompile libs.junit
@@ -1897,10 +1911,15 @@ project(':remote-storage-managers:s3') {
   }
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
-    from(configurations.runtime) {
-      exclude('kafka-rsm-s3*')
+    from(configurations.localDeps - project(':core').configurations.runtime - project(':tools').configurations.runtime) {
+        exclude('kafka-rsm-s3*')
     }
-    into "$buildDir/dependant-libs-${versions.scala}"
+    into "$buildDir/dependant-libs"
+    duplicatesStrategy 'exclude'
+  }
+
+  jar {
+    dependsOn copyDependantLibs
   }
 }
 
