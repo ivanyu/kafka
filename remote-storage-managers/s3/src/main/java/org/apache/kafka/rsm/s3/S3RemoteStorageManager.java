@@ -416,6 +416,8 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             ListObjectsV2Result listObjectsResult;
             do {
                 // TODO validate this from the read-after-delete point of view
+                // https://cwiki.apache.org/confluence/display/KAFKA/KIP-516%3A+Topic+Identifiers
+                // might be helpful in the future
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
                 log.debug("Received object list from S3: {}", listObjectsResult);
 
@@ -554,7 +556,6 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         long startOffset,
                         boolean minOneMessage) throws IOException {
         // TODO what to return in case nothing exists for this offset?
-        // TODO test when segments marked for deletion
 
         if (startOffset > remoteLogIndexEntry.lastOffset()) {
             throw new IllegalArgumentException("startOffset > remoteLogIndexEntry.lastOffset(): "
