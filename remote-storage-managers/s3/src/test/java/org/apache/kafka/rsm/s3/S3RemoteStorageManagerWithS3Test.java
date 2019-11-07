@@ -475,33 +475,122 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
     public void testListRemoteSegments() throws IOException {
         remoteStorageManager.configure(basicProps(bucket));
 
-        int recordsInSegment = 20;
-        int numSegments = 10;
-        for (int i = 0; i < numSegments; i++) {
-            int offset = recordsInSegment * i;
-            LogSegment segment = createLogSegment(offset);
-            appendRecordBatch(segment, offset, 100, recordsInSegment);
-            segment.onBecomeInactiveSegment();
-            remoteStorageManager.copyLogSegment(TP0, segment, 0);
-        }
+        final int numRecords = 20;
+
+        // baseOffset=0, lastOffset=19, leaderEpoch=0
+        int offset = 0;
+        LogSegment segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 0);
+
+        // baseOffset=5, lastOffset=24, leaderEpoch=1
+        offset = 5;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 1);
+
+        // baseOffset=20, lastOffset=39, leaderEpoch=0
+        offset = 20;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 0);
+
+        // baseOffset=25, lastOffset=44, leaderEpoch=1
+        offset = 25;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 1);
+
+        // baseOffset=40, lastOffset=59, leaderEpoch=0
+        offset = 40;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 0);
+
+        // baseOffset=45, lastOffset=64, leaderEpoch=1
+        offset = 45;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, numRecords);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 1);
 
         List<RemoteLogSegmentInfo> allRemoteSegments = remoteStorageManager.listRemoteSegments(TP0);
-        assertEquals(numSegments, allRemoteSegments.size());
-        for (int i = 0; i < numSegments; i++) {
-            RemoteLogSegmentInfo segment = allRemoteSegments.get(i);
-            assertEquals(recordsInSegment * i, segment.baseOffset());
-            assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
-        }
+        assertEquals(6, allRemoteSegments.size());
 
-        int numSkippedSegments = 5;
+        RemoteLogSegmentInfo segmentInfo = allRemoteSegments.get(0);
+        assertEquals(0, segmentInfo.baseOffset());
+        assertEquals(19, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(1);
+        assertEquals(5, segmentInfo.baseOffset());
+        assertEquals(24, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(2);
+        assertEquals(numRecords, segmentInfo.baseOffset());
+        assertEquals(39, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(3);
+        assertEquals(25, segmentInfo.baseOffset());
+        assertEquals(44, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(4);
+        assertEquals(40, segmentInfo.baseOffset());
+        assertEquals(59, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(5);
+        assertEquals(45, segmentInfo.baseOffset());
+        assertEquals(64, segmentInfo.lastOffset());
+
         List<RemoteLogSegmentInfo> partialRemoteSegments = remoteStorageManager.listRemoteSegments(
-            TP0, numSkippedSegments * recordsInSegment);
-        assertEquals(numSkippedSegments, partialRemoteSegments.size());
-        for (int i = numSkippedSegments; i < numSegments; i++) {
-            RemoteLogSegmentInfo segment = partialRemoteSegments.get(i - numSkippedSegments);
-            assertEquals(recordsInSegment * i, segment.baseOffset());
-            assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
-        }
+            TP0, 41);
+        assertEquals(3, partialRemoteSegments.size());
+        segmentInfo = partialRemoteSegments.get(0);
+        assertEquals(25, segmentInfo.baseOffset());
+        assertEquals(44, segmentInfo.lastOffset());
+
+        segmentInfo = partialRemoteSegments.get(1);
+        assertEquals(40, segmentInfo.baseOffset());
+        assertEquals(59, segmentInfo.lastOffset());
+
+        segmentInfo = partialRemoteSegments.get(2);
+        assertEquals(45, segmentInfo.baseOffset());
+        assertEquals(64, segmentInfo.lastOffset());
+    }
+
+    @Test
+    public void testListRemoteSegmentsOrder() throws IOException {
+        remoteStorageManager.configure(basicProps(bucket));
+
+        // baseOffset=1, lastOffset=18, leaderEpoch=0
+        int offset = 1;
+        LogSegment segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, 18);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 0);
+
+        // baseOffset=0, lastOffset=20, leaderEpoch=1
+        offset = 0;
+        segment = createLogSegment(offset);
+        appendRecordBatch(segment, offset, 100, 21);
+        segment.onBecomeInactiveSegment();
+        remoteStorageManager.copyLogSegment(TP0, segment, 1);
+
+        List<RemoteLogSegmentInfo> allRemoteSegments = remoteStorageManager.listRemoteSegments(TP0);
+        assertEquals(2, allRemoteSegments.size());
+
+        // Should be sorted by base offset.
+        RemoteLogSegmentInfo segmentInfo = allRemoteSegments.get(0);
+        assertEquals(0, segmentInfo.baseOffset());
+        assertEquals(20, segmentInfo.lastOffset());
+
+        segmentInfo = allRemoteSegments.get(1);
+        assertEquals(1, segmentInfo.baseOffset());
+        assertEquals(18, segmentInfo.lastOffset());
     }
 
     @Test

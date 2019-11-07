@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -102,15 +103,15 @@ import scala.collection.Seq;
  * <pre>
  *   {bucket} / {topic}-{partition} /
  *     log /
- *       {base-offset}-{last-offset}-le{leader-epoch}
+ *       {last-offset}-{base-offset}-le{leader-epoch}
  *     index /
- *       {base-offset}-{last-offset}-le{leader-epoch}
+ *       {last-offset}-{base-offset}-le{leader-epoch}
  *     time-index /
- *       {base-offset}-{last-offset}-le{leader-epoch}
+ *       {last-offset}-{base-offset}-le{leader-epoch}
  *     remote-log-index /
- *       {base-offset}-{last-offset}-le{leader-epoch}
+ *       {last-offset}-{base-offset}-le{leader-epoch}
  *     last-modified-reverse-index /
- *       {last-modified-ms}-{base-offset}-{last-offset}-le{leader-epoch}
+ *       {last-modified-ms}-{last-offset}-{base-offset}-le{leader-epoch}
  * </pre>
  *
  * <p>The reason behind this inverted layout--grouping by file type instead of offset pairs--
@@ -119,10 +120,15 @@ import scala.collection.Seq;
  *
  * <p>Each file is uniquely identified by three values:
  * <ul>
- *     <li>the base offset of the segment;</li>
  *     <li>the last offset in the segment;</li>
+ *     <li>the base offset of the segment;</li>
  *     <li>the epoch of the leader which uploaded the file.</li>
  * </ul>
+ *
+ * <p>The reason to put the last offset before the base offset is {@link #listRemoteSegments(TopicPartition, long)}.
+ * This method lists segments that contain offsets starting from some specified min offset. It lists segments
+ * which last offsets are equals or greater to this min offset.
+ * This is naturally done by S3 itself if the last offset is put first.
  *
  * <p>The remote log index file stores {@link RemoteLogIndexEntry}s.
  *
@@ -273,9 +279,10 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     }
 
     @Override
-    public List<RemoteLogSegmentInfo> listRemoteSegments(TopicPartition topicPartition, long minBaseOffset) throws IOException {
+    public List<RemoteLogSegmentInfo> listRemoteSegments(TopicPartition topicPartition, long minOffset) throws IOException {
         String directoryPrefix = LogFileS3Key.directoryPrefix(topicPartition);
-        String startAfterKey = LogFileS3Key.baseOffsetPrefix(topicPartition, minBaseOffset);
+        // The last offset should be less or equal to the min offset.
+        String startAfterKey = LogFileS3Key.lastOffsetPrefix(topicPartition, minOffset);
         ListObjectsV2Request listObjectsRequest =
                 createListObjectsRequest(directoryPrefix)
                         .withStartAfter(startAfterKey);
@@ -300,10 +307,10 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                         continue;
                     }
 
-                    if (segmentInfo.baseOffset() < minBaseOffset) {
+                    if (segmentInfo.lastOffset() < minOffset) {
                         log.warn("Requested files starting from key {}, but got {}", startAfterKey, key);
                     }
-                    assert segmentInfo.baseOffset() >= minBaseOffset;
+                    assert segmentInfo.lastOffset() >= minOffset;
 
                     // One offset pair may appear in different leader epochs, need to prevent duplication.
                     // We rely on lexicographical sorting order, by which earlier leader epochs will appear
@@ -320,10 +327,12 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                 listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
             } while (listObjectsResult.isTruncated());
         } catch (SdkClientException e) {
-            throw new KafkaException("Error listing remote segments in " + topicPartition + " with min base offset " + minBaseOffset, e);
+            throw new KafkaException("Error listing remote segments in " + topicPartition + " with min offset " + minOffset, e);
         }
 
-        // No need to explicitly sort the result on our side, we rely on S3 returning in the lexicographical older.
+        // We need to explicitly sort the result on our side by the base offset,
+        // because S3 returns key sorted lexicographically, i.e. by the last offset.
+        result.sort(Comparator.comparing(RemoteLogSegmentInfo::baseOffset));
         return result;
     }
 

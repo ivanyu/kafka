@@ -28,9 +28,9 @@ public class RemoteLogIndexFileKeyS3Key extends S3Key {
 
     public static String key(TopicPartition topicPartition, long baseOffset, long lastOffset, int leaderEpoch) {
         return topicPartitionDirectory(topicPartition) + DIRECTORY_SEPARATOR + DIRECTORY + DIRECTORY_SEPARATOR
-            + formatLong(baseOffset)
-            + "-"
             + formatLong(lastOffset)
+            + "-"
+            + formatLong(baseOffset)
             + "-le" + formalInteger(leaderEpoch);
     }
 }

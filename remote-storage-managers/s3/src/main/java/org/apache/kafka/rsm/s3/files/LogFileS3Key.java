@@ -26,7 +26,8 @@ import java.util.regex.Pattern;
  */
 public class LogFileS3Key extends S3Key {
     private static final String DIRECTORY = "log";
-    private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-le(\\d{10})");
+    private static final Pattern NAME_PATTERN = Pattern.compile(
+        "(?<lastOffset>\\d{20})-(?<baseOffset>\\d{20})-le(?<leaderEpoch>\\d{10})");
 
     private LogFileS3Key() {}
 
@@ -35,11 +36,11 @@ public class LogFileS3Key extends S3Key {
     }
 
     public static String keyPrefixWithoutLeaderEpochNumber(TopicPartition topicPartition, long baseOffset, long lastOffset) {
-        return baseOffsetPrefix(topicPartition, baseOffset) + "-" + formatLong(lastOffset) + "-le";
+        return lastOffsetPrefix(topicPartition, lastOffset) + "-" + formatLong(baseOffset) + "-le";
     }
 
-    public static String baseOffsetPrefix(TopicPartition topicPartition, long baseOffset) {
-        return directoryPrefix(topicPartition) + formatLong(baseOffset);
+    public static String lastOffsetPrefix(TopicPartition topicPartition, long lastOffset) {
+        return directoryPrefix(topicPartition) + formatLong(lastOffset);
     }
 
     public static String directoryPrefix(TopicPartition topicPartition) {
@@ -63,9 +64,9 @@ public class LogFileS3Key extends S3Key {
 
         Matcher m = NAME_PATTERN.matcher(remaining);
         if (m.matches()) {
-            long baseOffset = Long.parseLong(m.group(1));
-            long lastOffset = Long.parseLong(m.group(2));
-            int leaderEpoch = Integer.parseInt(m.group(3));
+            long baseOffset = Long.parseLong(m.group("baseOffset"));
+            long lastOffset = Long.parseLong(m.group("lastOffset"));
+            int leaderEpoch = Integer.parseInt(m.group("leaderEpoch"));
             return new SegmentInfo(topicPartition, baseOffset, lastOffset, leaderEpoch);
         } else {
             throw new IllegalArgumentException("Invalid log file S3 key format: " + s3Key);

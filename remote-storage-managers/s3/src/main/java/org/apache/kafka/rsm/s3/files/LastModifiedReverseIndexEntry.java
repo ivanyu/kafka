@@ -29,7 +29,8 @@ import java.util.regex.Pattern;
  */
 public class LastModifiedReverseIndexEntry extends S3Key {
     private static final String DIRECTORY = "last-modified-reverse-index";
-    private static final Pattern NAME_PATTERN = Pattern.compile("(\\d{20})-(\\d{20})-(\\d{20})-le(\\d{10})");
+    private static final Pattern NAME_PATTERN = Pattern.compile(
+        "(?<lastModifiedMs>\\d{20})-(?<lastOffset>\\d{20})-(?<baseOffset>\\d{20})-le(?<leaderEpoch>\\d{10})");
 
     private final TopicPartition topicPartition;
     private final long lastModifiedMs;
@@ -89,8 +90,8 @@ public class LastModifiedReverseIndexEntry extends S3Key {
     public static String key(TopicPartition topicPartition, long lastModifiedMs, long baseOffset, long lastOffset, int leaderEpoch) {
         return directoryPrefix(topicPartition)
                 + formatLong(lastModifiedMs) + "-"
-                + formatLong(baseOffset) + "-"
-                + formatLong(lastOffset) + "-le"
+                + formatLong(lastOffset) + "-"
+                + formatLong(baseOffset) + "-le"
                 + formalInteger(leaderEpoch);
     }
 
@@ -115,10 +116,10 @@ public class LastModifiedReverseIndexEntry extends S3Key {
 
         Matcher m = NAME_PATTERN.matcher(remaining);
         if (m.matches()) {
-            long lastModifiedMs = Long.parseLong(m.group(1));
-            long baseOffset = Long.parseLong(m.group(2));
-            long lastOffset = Long.parseLong(m.group(3));
-            int leaderEpoch = Integer.parseInt(m.group(4));
+            long lastModifiedMs = Long.parseLong(m.group("lastModifiedMs"));
+            long baseOffset = Long.parseLong(m.group("baseOffset"));
+            long lastOffset = Long.parseLong(m.group("lastOffset"));
+            int leaderEpoch = Integer.parseInt(m.group("leaderEpoch"));
             return new LastModifiedReverseIndexEntry(topicPartition, lastModifiedMs, baseOffset, lastOffset, leaderEpoch);
         } else {
             throw new IllegalArgumentException("Invalid last modified reverse index entry format: " + s3Key);
