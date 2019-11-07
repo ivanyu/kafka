@@ -31,7 +31,7 @@ abstract class S3Key {
     static final String DIRECTORY_SEPARATOR = "/";
 
     private static final Pattern TOPIC_PARTITION_PATTERN =
-            Pattern.compile("([^/]+)-(\\d+?)" + DIRECTORY_SEPARATOR + ".*");
+            Pattern.compile("(?<topic>[^/]+)-(?<partition>\\d+?)" + DIRECTORY_SEPARATOR + ".*");
 
     private static final NumberFormat INTEGER_FORMAT = NumberFormat.getInstance();
     static {
@@ -58,8 +58,8 @@ abstract class S3Key {
             throw new IllegalArgumentException("Can't extract topic-partition from S3 key " + s3Key);
         }
 
-        String topic = matcher.group(1);
-        int partition = Integer.parseInt(matcher.group(2));
+        String topic = matcher.group("topic");
+        int partition = Integer.parseInt(matcher.group("partition"));
         return new TopicPartition(topic, partition);
     }
 }

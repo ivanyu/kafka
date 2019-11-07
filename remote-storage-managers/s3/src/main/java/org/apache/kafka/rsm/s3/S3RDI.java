@@ -34,7 +34,8 @@ final class S3RDI {
     private static final Logger log = LoggerFactory.getLogger(S3RDI.class);
 
     private static final String RDI_POSITION_SEPARATOR = "#";
-    private static final Pattern RDI_PATTERN = Pattern.compile("(.*)" + RDI_POSITION_SEPARATOR + "(\\d+)");
+    private static final Pattern RDI_PATTERN = Pattern.compile(
+        "(?<s3Key>.*)" + RDI_POSITION_SEPARATOR + "(?<position>\\d+)");
 
     private final String s3Key;
     private final int position;
@@ -48,8 +49,8 @@ final class S3RDI {
             throw new IllegalArgumentException("Can't parse RDI: " + rdiStr);
         }
 
-        this.s3Key = m.group(1);
-        this.position = Integer.parseInt(m.group(2));
+        this.s3Key = m.group("s3Key");
+        this.position = Integer.parseInt(m.group("position"));
     }
 
     final String s3Key() {
