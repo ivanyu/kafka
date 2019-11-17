@@ -202,7 +202,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
   class RLMTask(tp: TopicPartition) extends CancellableRunnable with Logging {
     this.logIdent = s"[RLMTask partition:$tp ] "
     @volatile private var leaderEpoch: Int = -1
-    @volatile def isLeader: Boolean = leaderEpoch >= 0
+    private def isLeader(): Boolean = leaderEpoch >= 0
 
     // The highest offset that is already in the local remote index files
     // When looking for new remote segments, we will only look for the remote segments that contains larger offsets
@@ -249,9 +249,9 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
               sortedSegments.slice(0, index).foreach { segment =>
                 // store locally here as this may get updated after the below if condition is computed as false.
                 val leaderEpochVal = leaderEpoch
-                if (isCancelled() || !isLeader) {
+                if (isCancelled() || !isLeader()) {
                   info(s"Skipping copying log segments as the current task state is changed, cancelled: " +
-                    s"$isCancelled() leader:$isLeader")
+                    s"$isCancelled() leader:$isLeader()")
                   return
                 }
 
@@ -260,9 +260,11 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
                 val fileName = file.getName
                 val baseOffsetStr = fileName.substring(0, fileName.indexOf("."))
                 rlmIndexer.maybeBuildIndexes(tp, entries.asScala.toSeq, file.getParentFile, baseOffsetStr)
-                readOffset = entries.get(entries.size() - 1).lastOffset
-                //update the highest remote offset in the log till which indexes exist locally.
-                log.updateRemoteIndexHighestOffset(readOffset)
+                if (!entries.isEmpty) {
+                  readOffset = entries.get(entries.size() - 1).lastOffset
+                  //update the highest remote offset in the log till which indexes exist locally.
+                  log.updateRemoteIndexHighestOffset(readOffset)
+                }
               }
             }
           } else {
@@ -317,14 +319,14 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
       }
 
       try {
-        val remoteLso: Long =
-          if (isLeader) {
+        val remoteLogStartOffset: Long =
+          if (isLeader()) {
             remoteStorageManager.cleanupLogUntil(tp, time.milliseconds() - rlmConfig.remoteLogRetentionMillis)
           } else {
             remoteStorageManager.earliestLogOffset(tp)
           }
 
-        handleLogStartOffsetUpdate(tp, remoteLso)
+        handleLogStartOffsetUpdate(tp, remoteLogStartOffset)
       } catch {
         case ex:Exception => error(s"Error while cleaningup log segments for partition: $tp", ex)
       }
@@ -334,7 +336,7 @@ class RemoteLogManager(fetchLog: TopicPartition => Option[Log],
       try {
         if (!isCancelled()) {
           //a. copy log segments to remote store
-          if (isLeader) copyLogSegmentsToRemote()
+          if (isLeader()) copyLogSegmentsToRemote()
 
           //b. fetch missing remote index files
           updateRemoteLogIndexes()
