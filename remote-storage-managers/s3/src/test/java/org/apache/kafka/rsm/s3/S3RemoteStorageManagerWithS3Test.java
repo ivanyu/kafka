@@ -613,6 +613,7 @@ public class S3RemoteStorageManagerWithS3Test extends S3RemoteStorageManagerTest
             RemoteLogSegmentInfo segment = allRemoteSegments.get(i);
             assertEquals(recordsInSegment * i, segment.baseOffset());
             assertEquals(recordsInSegment * (i + 1) - 1, segment.lastOffset());
+            assertEquals(1, segment.leaderEpoch());
         }
     }
 

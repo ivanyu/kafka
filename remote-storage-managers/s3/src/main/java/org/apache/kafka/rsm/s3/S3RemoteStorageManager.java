@@ -23,12 +23,11 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.amazonaws.SdkClientException;
@@ -164,7 +163,7 @@ import scala.collection.Seq;
  * <p>Sometimes two brokers can think of themselves to be the leader of a partition.
  * It's also not impossible for them to simultaneously try to upload files from a log segment.
  * To break this tie, each file uploaded to the remote tier is suffixed with the leader epoch number.
- * During the read time, the file set with the lower leader epoch number will be used.
+ * When remote segments are listed, ones with the higher leader epoch number will be used.
  * This will not leave garbage on the remote tier, because
  * {@link S3RemoteStorageManager#cleanupLogUntil(TopicPartition, long)} will collect files to be deleted
  * without taking the leader epoch number into consideration.
@@ -289,8 +288,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         log.debug("Listing objects on S3 with request {}", listObjectsRequest);
         ListObjectsV2Result listObjectsResult;
 
-        List<RemoteLogSegmentInfo> result = new ArrayList<>();
-        Set<SegmentInfo.OffsetPair> seenOffsetPairs = new HashSet<>();
+        Map<SegmentInfo.OffsetPair, List<SegmentInfo>> offsetPairsLeadEpochs = new HashMap<>();
         try {
             do {
                 listObjectsResult = s3Client.listObjectsV2(listObjectsRequest);
@@ -313,15 +311,11 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
                     assert segmentInfo.lastOffset() >= minOffset;
 
                     // One offset pair may appear in different leader epochs, need to prevent duplication.
-                    // We rely on lexicographical sorting order, by which earlier leader epochs will appear
-                    // and be added the map before later leader epochs.
-                    if (!seenOffsetPairs.contains(segmentInfo.offsetPair())) {
-                        RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
-                                segmentInfo.baseOffset(), segmentInfo.lastOffset(), topicPartition, segmentInfo.leaderEpoch(),
-                                Collections.emptyMap());
-                        result.add(segment);
-                        seenOffsetPairs.add(segmentInfo.offsetPair());
+                    // We collect all leader epochs per an offset pair and pick the select the latest ones.
+                    if (!offsetPairsLeadEpochs.containsKey(segmentInfo.offsetPair())) {
+                        offsetPairsLeadEpochs.put(segmentInfo.offsetPair(), new ArrayList<>());
                     }
+                    offsetPairsLeadEpochs.get(segmentInfo.offsetPair()).add(segmentInfo);
                 }
 
                 listObjectsRequest.setContinuationToken(listObjectsResult.getNextContinuationToken());
@@ -330,8 +324,17 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             throw new KafkaException("Error listing remote segments in " + topicPartition + " with min offset " + minOffset, e);
         }
 
-        // We need to explicitly sort the result on our side by the base offset,
-        // because S3 returns key sorted lexicographically, i.e. by the last offset.
+        List<RemoteLogSegmentInfo> result = new ArrayList<>();
+        for (SegmentInfo.OffsetPair offsetPair : offsetPairsLeadEpochs.keySet()) {
+            SegmentInfo maxLeaderEpochSegmentInfo = offsetPairsLeadEpochs.get(offsetPair).stream()
+                    .max(Comparator.comparingInt(SegmentInfo::leaderEpoch))
+                    .get(); // safe to get, because the list is always not empty
+            RemoteLogSegmentInfo segment = new RemoteLogSegmentInfo(
+                    maxLeaderEpochSegmentInfo.baseOffset(), maxLeaderEpochSegmentInfo.lastOffset(),
+                    topicPartition, maxLeaderEpochSegmentInfo.leaderEpoch(),
+                    Collections.emptyMap());
+            result.add(segment);
+        }
         result.sort(Comparator.comparing(RemoteLogSegmentInfo::baseOffset));
         return result;
     }
