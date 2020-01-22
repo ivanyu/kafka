@@ -1580,19 +1580,28 @@ class KafkaController(val config: KafkaConfig,
   private def processZkPartitionReassignment(): Set[TopicPartition] = {
     // We need to register the watcher if the path doesn't exist in order to detect future
     // reassignments and we get the `path exists` check for free
+    error(s"[@@@] processZkPartitionReassignment: isActive=${isActive}")
     if (isActive && zkClient.registerZNodeChangeHandlerAndCheckExistence(partitionReassignmentHandler)) {
       val reassignmentResults = mutable.Map.empty[TopicPartition, ApiError]
       val partitionsToReassign = mutable.Map.empty[TopicPartition, ReplicaAssignment]
 
-      zkClient.getPartitionReassignment().foreach { case (tp, targetReplicas) =>
-        maybeBuildReassignment(tp, Some(targetReplicas)) match {
+      val partitionReassigntment = zkClient.getPartitionReassignment()
+      error(s"[@@@] processZkPartitionReassignment: partitionReassigntment=${partitionReassigntment}")
+      partitionReassigntment.foreach { case (tp, targetReplicas) =>
+        val maybeAssignment = maybeBuildReassignment(tp, Some(targetReplicas))
+        error(s"[@@@] processZkPartitionReassignment: maybeAssignment=${maybeAssignment}")
+        maybeAssignment match {
           case Some(context) => partitionsToReassign.put(tp, context)
           case None => reassignmentResults.put(tp, new ApiError(Errors.NO_REASSIGNMENT_IN_PROGRESS))
         }
       }
 
+      error(s"[@@@] processZkPartitionReassignment: reassignmentResults=${reassignmentResults}")
       reassignmentResults ++= maybeTriggerPartitionReassignment(partitionsToReassign)
+      error(s"[@@@] processZkPartitionReassignment: reassignmentResults=${reassignmentResults}")
       val (partitionsReassigned, partitionsFailed) = reassignmentResults.partition(_._2.error == Errors.NONE)
+      error(s"[@@@] processZkPartitionReassignment: partitionsReassigned=${partitionsReassigned}")
+      error(s"[@@@] processZkPartitionReassignment: partitionsFailed=${partitionsFailed}")
       if (partitionsFailed.nonEmpty) {
         warn(s"Failed reassignment through zk with the following errors: $partitionsFailed")
         maybeRemoveFromZkReassignment((tp, _) => partitionsFailed.contains(tp))
@@ -1662,7 +1671,9 @@ class KafkaController(val config: KafkaConfig,
 
   private def maybeBuildReassignment(topicPartition: TopicPartition,
                                      targetReplicasOpt: Option[Seq[Int]]): Option[ReplicaAssignment] = {
+    error(s"[@@@] maybeBuildReassignment: topicPartition=${topicPartition}, targetReplicasOpt=${targetReplicasOpt}")
     val replicaAssignment = controllerContext.partitionFullReplicaAssignment(topicPartition)
+    error(s"[@@@] maybeBuildReassignment: replicaAssignment=${replicaAssignment}")
     if (replicaAssignment.isBeingReassigned) {
       val targetReplicas = targetReplicasOpt.getOrElse(replicaAssignment.originReplicas)
       Some(replicaAssignment.reassignTo(targetReplicas))
@@ -1897,6 +1908,7 @@ class KafkaController(val config: KafkaConfig,
         case ApiPartitionReassignment(reassignments, callback) =>
           processApiPartitionReassignment(reassignments, callback)
         case ZkPartitionReassignment =>
+          error("[@@@] ZkPartitionReassignment requested")
           processZkPartitionReassignment()
         case ListPartitionReassignments(partitions, callback) =>
           processListPartitionReassignments(partitions, callback)
@@ -1973,13 +1985,16 @@ class TopicDeletionHandler(eventManager: ControllerEventManager) extends ZNodeCh
   override def handleChildChange(): Unit = eventManager.put(TopicDeletion)
 }
 
-class PartitionReassignmentHandler(eventManager: ControllerEventManager) extends ZNodeChangeHandler {
+class PartitionReassignmentHandler(eventManager: ControllerEventManager) extends ZNodeChangeHandler with Logging {
   override val path: String = ReassignPartitionsZNode.path
 
   // Note that the event is also enqueued when the znode is deleted, but we do it explicitly instead of relying on
   // handleDeletion(). This approach is more robust as it doesn't depend on the watcher being re-registered after
   // it's consumed during data changes (we ensure re-registration when the znode is deleted).
-  override def handleCreation(): Unit = eventManager.put(ZkPartitionReassignment)
+  override def handleCreation(): Unit = {
+    error(s"[@@@] PartitionReassignmentHandlerl.handleCreation")
+    eventManager.put(ZkPartitionReassignment)
+  }
 }
 
 class PartitionReassignmentIsrChangeHandler(eventManager: ControllerEventManager, partition: TopicPartition) extends ZNodeChangeHandler {

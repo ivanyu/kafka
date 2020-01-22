@@ -1382,11 +1382,13 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
   def registerZNodeChangeHandlerAndCheckExistence(zNodeChangeHandler: ZNodeChangeHandler): Boolean = {
     zooKeeperClient.registerZNodeChangeHandler(zNodeChangeHandler)
     val existsResponse = retryRequestUntilConnected(ExistsRequest(zNodeChangeHandler.path))
-    existsResponse.resultCode match {
+    val result = existsResponse.resultCode match {
       case Code.OK => true
       case Code.NONODE => false
       case _ => throw existsResponse.resultException.get
     }
+    error(s"[@@@] registerZNodeChangeHandlerAndCheckExistence=${result}")
+    result
   }
 
   /**
