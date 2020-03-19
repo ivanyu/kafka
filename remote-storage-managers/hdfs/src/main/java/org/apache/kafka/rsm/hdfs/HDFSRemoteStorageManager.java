@@ -115,12 +115,12 @@ public class HDFSRemoteStorageManager implements RemoteStorageManager {
     }
 
     @Override
-    public boolean deleteLogSegment(RemoteLogSegmentMetadata remoteLogSegmentMetadata) throws RemoteStorageException {
+    public void deleteLogSegment(RemoteLogSegmentMetadata remoteLogSegmentMetadata) throws RemoteStorageException {
         try {
             String path = getSegmentRemoteDir(remoteLogSegmentMetadata.remoteLogSegmentId());
 
             FileSystem fs = getFS();
-            return fs.delete(new Path(path), true);
+            fs.delete(new Path(path), true);
         } catch (Exception e) {
             throw new RemoteStorageException("Failed to delete remote log segment", e);
         }

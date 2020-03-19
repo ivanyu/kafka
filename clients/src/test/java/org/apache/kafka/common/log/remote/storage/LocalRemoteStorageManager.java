@@ -197,13 +197,13 @@ public final class LocalRemoteStorageManager implements RemoteStorageManager  {
     }
 
     @Override
-    public boolean deleteLogSegment(final RemoteLogSegmentMetadata metadata) throws RemoteStorageException {
-        return wrap(() -> {
+    public void deleteLogSegment(final RemoteLogSegmentMetadata metadata) throws RemoteStorageException {
+        wrap(() -> {
             if (deleteEnabled) {
                 final RemoteLogSegmentFiles remote = new RemoteLogSegmentFiles(metadata.remoteLogSegmentId(), true);
-                return remote.deleteAll();
+                remote.deleteAll();
             }
-            return true;
+            return null;
         });
     }
 
