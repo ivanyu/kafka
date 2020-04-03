@@ -103,11 +103,15 @@ public class S3RemoteStorageManagerTest {
     }
 
     @After
-    public void tearDown() {
+    public void tearDown() throws IOException {
+        remoteStorageManager.close();
+
+        for (final LogSegment createdSegment : createdSegments) {
+            createdSegment.close();
+        }
+
+        // Sometimes errors happen here on Windows machines.
         try {
-            for (final LogSegment createdSegment : createdSegments) {
-                createdSegment.close();
-            }
             Utils.delete(logDir);
         } catch (final IOException e) {
             log.error("Error during tear down", e);
