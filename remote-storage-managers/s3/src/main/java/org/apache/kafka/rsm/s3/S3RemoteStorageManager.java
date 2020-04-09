@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.rsm.s3;
 
+import kafka.log.Log;
 import org.apache.kafka.common.log.remote.storage.LogSegmentData;
 import org.apache.kafka.common.log.remote.storage.RemoteLogSegmentContext;
 import org.apache.kafka.common.log.remote.storage.RemoteLogSegmentId;
@@ -40,6 +41,11 @@ import com.amazonaws.services.s3.transfer.Upload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * AWS S3 RemoteStorageManager.
+ *
+ * Stores files as {@code {topic}-{partition}/00000000000000000123.{log|index|timeindex}.{uuid}}.
+ */
 public class S3RemoteStorageManager implements RemoteStorageManager {
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
 
@@ -85,9 +91,11 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentId, "remoteLogSegmentId must not be null");
         Objects.requireNonNull(logSegmentData, "logSegmentData must not be null");
 
-        final String logFileKey = s3Key(remoteLogSegmentId, logSegmentData.logSegment().getName());
-        final String offsetIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.offsetIndex().getName());
-        final String timeIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.timeIndex().getName());
+        final long baseOffset = Log.offsetFromFileName(logSegmentData.logSegment().getName());
+
+        final String logFileKey = logFileKey(remoteLogSegmentId, baseOffset);
+        final String offsetIndexFileKey = offsetIndexFileKey(remoteLogSegmentId, baseOffset);
+        final String timeIndexFileKey = timeIndexFileKey(remoteLogSegmentId, baseOffset);
         try {
             log.debug("Uploading log file: {}", logFileKey);
             final Upload logFileUpload = transferManager.upload(this.bucket, logFileKey, logSegmentData.logSegment());
@@ -102,11 +110,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             offsetIndexFileUpload.waitForUploadResult();
             timeIndexFileUpload.waitForUploadResult();
 
-            return new S3RemoteLogSegmentContext(
-                logSegmentData.logSegment().getName(),
-                logSegmentData.offsetIndex().getName(),
-                logSegmentData.timeIndex().getName()
-            );
+            return new S3RemoteLogSegmentContext(baseOffset);
         } catch (final Exception e) {
             final String message = "Error uploading remote log segment " + remoteLogSegmentId;
             log.error(message, e);
@@ -139,7 +143,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         }
 
         final S3RemoteLogSegmentContext context = deserializeS3RemoteLogSegmentContext(remoteLogSegmentMetadata.remoteLogSegmentContext());
-        final String logFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.logFileName());
+        final String logFileKey = logFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
 
         try {
             final GetObjectRequest getObjectRequest;
@@ -160,7 +164,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentMetadata, "remoteLogSegmentMetadata must not be null");
 
         final S3RemoteLogSegmentContext context = deserializeS3RemoteLogSegmentContext(remoteLogSegmentMetadata.remoteLogSegmentContext());
-        final String offsetIndexFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.offsetIndexFileName());
+        final String offsetIndexFileKey = offsetIndexFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
 
         try {
             final S3Object s3Object = s3Client.getObject(bucket, offsetIndexFileKey);
@@ -175,7 +179,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentMetadata, "remoteLogSegmentMetadata must not be null");
 
         final S3RemoteLogSegmentContext context = deserializeS3RemoteLogSegmentContext(remoteLogSegmentMetadata.remoteLogSegmentContext());
-        final String timeIndexFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.timeIndexFileName());
+        final String timeIndexFileKey = timeIndexFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
 
         try {
             final S3Object s3Object = s3Client.getObject(bucket, timeIndexFileKey);
@@ -190,9 +194,9 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentMetadata, "remoteLogSegmentMetadata must not be null");
 
         final S3RemoteLogSegmentContext context = deserializeS3RemoteLogSegmentContext(remoteLogSegmentMetadata.remoteLogSegmentContext());
-        final String logFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.logFileName());
-        final String offsetIndexFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.offsetIndexFileName());
-        final String timeIndexFileKey = s3Key(remoteLogSegmentMetadata.remoteLogSegmentId(), context.timeIndexFileName());
+        final String logFileKey = logFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
+        final String offsetIndexFileKey = offsetIndexFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
+        final String timeIndexFileKey = timeIndexFileKey(remoteLogSegmentMetadata.remoteLogSegmentId(), context.baseOffset());
 
         try {
             final DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
@@ -208,8 +212,23 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         transferManager.shutdownNow(); // shuts down the S3 client too
     }
 
-    private String s3Key(final RemoteLogSegmentId remoteLogSegmentId, final String fileName) {
-        return remoteLogSegmentId.topicPartition().toString() + "/" + fileName + "." + remoteLogSegmentId.id();
+    private String logFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
+        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
+                + Log.LogFileSuffix() + "." + remoteLogSegmentId.id();
+    }
+
+    private String offsetIndexFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
+        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
+                + Log.IndexFileSuffix() + "." + remoteLogSegmentId.id();
+    }
+
+    private String timeIndexFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
+        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
+                + Log.TimeIndexFileSuffix() + "." + remoteLogSegmentId.id();
+    }
+
+    private String fileNamePrefix(final RemoteLogSegmentId remoteLogSegmentId) {
+        return remoteLogSegmentId.topicPartition().toString() + "/";
     }
 
     private S3RemoteLogSegmentContext deserializeS3RemoteLogSegmentContext(final byte[] contextBytes) throws RemoteStorageException {

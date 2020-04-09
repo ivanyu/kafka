@@ -24,59 +24,52 @@ import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.protocol.types.Type;
 
+/**
+ * {@link RemoteLogSegmentContext} for {@link S3RemoteStorageManager}.
+ *
+ * The storage schema supports versions. Currently, there is only one version, 0.
+ *
+ * The version 0 schema consists of:
+ * <ul>
+ *     <li>version;</li>
+ *     <li>file name base offset (e.g. {@code 00000000000000000123}).</li>
+ * </ul>
+ */
 public class S3RemoteLogSegmentContext implements RemoteLogSegmentContext {
 
-    public static final String LOG_FILE_NAME_KEY_NAME = "log_file_name";
-    public static final String OFFSET_INDEX_FILE_NAME_KEY_NAME = "offset_index_file_name";
-    public static final String TIME_INDEX_FILE_NAME_KEY_NAME = "time_index_file_name";
-    public static final Schema SCHEMA = new Schema(
-        new Field(LOG_FILE_NAME_KEY_NAME, Type.STRING),
-        new Field(OFFSET_INDEX_FILE_NAME_KEY_NAME, Type.STRING),
-        new Field(TIME_INDEX_FILE_NAME_KEY_NAME, Type.STRING)
+    private static final short VERSION = 0;
+
+    public static final String VERSION_KEY_NAME = "version";
+    public static final String BASE_OFFSET_KEY_NAME = "base_offset";
+    public static final Schema SCHEMA_V0 = new Schema(
+        new Field(VERSION_KEY_NAME, Type.INT16),
+        new Field(BASE_OFFSET_KEY_NAME, Type.INT64)
     );
+    private final long baseOffset;
 
-    private final String logFileName;
-    private final String offsetIndexFileName;
-    private final String timeIndexFileName;
-
-    public S3RemoteLogSegmentContext(final String logFileName,
-                                     final String offsetIndexFileName,
-                                     final String timeIndexFileName) {
-        this.logFileName = logFileName;
-        this.offsetIndexFileName = offsetIndexFileName;
-        this.timeIndexFileName = timeIndexFileName;
+    public S3RemoteLogSegmentContext(final long baseOffset) {
+        this.baseOffset = baseOffset;
     }
 
-    public String logFileName() {
-        return logFileName;
-    }
-
-    public String offsetIndexFileName() {
-        return offsetIndexFileName;
-    }
-
-    public String timeIndexFileName() {
-        return timeIndexFileName;
+    public long baseOffset() {
+        return baseOffset;
     }
 
     @Override
     public byte[] asBytes() {
-        final Struct struct = new Struct(SCHEMA);
-        struct.set(LOG_FILE_NAME_KEY_NAME, logFileName);
-        struct.set(LOG_FILE_NAME_KEY_NAME, logFileName);
-        struct.set(OFFSET_INDEX_FILE_NAME_KEY_NAME, offsetIndexFileName);
-        struct.set(TIME_INDEX_FILE_NAME_KEY_NAME, timeIndexFileName);
-        final ByteBuffer buf = ByteBuffer.allocate(SCHEMA.sizeOf(struct));
+        final Struct struct = new Struct(SCHEMA_V0);
+        struct.set(VERSION_KEY_NAME, VERSION);
+        struct.set(BASE_OFFSET_KEY_NAME, baseOffset);
+        final ByteBuffer buf = ByteBuffer.allocate(SCHEMA_V0.sizeOf(struct));
         struct.writeTo(buf);
         return buf.array();
     }
 
     public static S3RemoteLogSegmentContext fromBytes(final byte[] bytes) {
-        final Struct struct = SCHEMA.read(ByteBuffer.wrap(bytes));
+        // When there are more schema versions, read conditionally.
+        final Struct struct = SCHEMA_V0.read(ByteBuffer.wrap(bytes));
         return new S3RemoteLogSegmentContext(
-            struct.getString(LOG_FILE_NAME_KEY_NAME),
-            struct.getString(OFFSET_INDEX_FILE_NAME_KEY_NAME),
-            struct.getString(TIME_INDEX_FILE_NAME_KEY_NAME)
+            struct.getLong(BASE_OFFSET_KEY_NAME)
         );
     }
 }
