@@ -28,7 +28,6 @@ import java.io.InputStream;
 import java.util.Map;
 import java.util.Objects;
 
-import com.amazonaws.SdkClientException;
 import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
@@ -86,16 +85,16 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentId, "remoteLogSegmentId must not be null");
         Objects.requireNonNull(logSegmentData, "logSegmentData must not be null");
 
+        final String logFileKey = s3Key(remoteLogSegmentId, logSegmentData.logSegment().getName());
+        final String offsetIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.offsetIndex().getName());
+        final String timeIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.timeIndex().getName());
         try {
-            final String logFileKey = s3Key(remoteLogSegmentId, logSegmentData.logSegment().getName());
             log.debug("Uploading log file: {}", logFileKey);
             final Upload logFileUpload = transferManager.upload(this.bucket, logFileKey, logSegmentData.logSegment());
 
-            final String offsetIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.offsetIndex().getName());
             log.debug("Uploading offset index file: {}", offsetIndexFileKey);
             final Upload offsetIndexFileUpload = transferManager.upload(this.bucket, offsetIndexFileKey, logSegmentData.offsetIndex());
 
-            final String timeIndexFileKey = s3Key(remoteLogSegmentId, logSegmentData.timeIndex().getName());
             log.debug("Uploading time index file: {}", timeIndexFileKey);
             final Upload timeIndexFileUpload = transferManager.upload(this.bucket, timeIndexFileKey, logSegmentData.timeIndex());
 
@@ -103,17 +102,25 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             offsetIndexFileUpload.waitForUploadResult();
             timeIndexFileUpload.waitForUploadResult();
 
-            // TODO clean up in case of interruption
-
             return new S3RemoteLogSegmentContext(
                 logSegmentData.logSegment().getName(),
                 logSegmentData.offsetIndex().getName(),
                 logSegmentData.timeIndex().getName()
             );
-        } catch (final SdkClientException e) {
-            throw new RemoteStorageException("Error uploading remote log segment " + remoteLogSegmentId, e);
-        } catch (final InterruptedException e) {
-            throw new RemoteStorageException("Uploading remote log segment " + remoteLogSegmentId + " interrupted", e);
+        } catch (final Exception e) {
+            final String message = "Error uploading remote log segment " + remoteLogSegmentId;
+            log.error(message, e);
+
+            log.info("Attempt to clean up partial upload");
+            try {
+                final DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(this.bucket)
+                        .withKeys(logFileKey, offsetIndexFileKey, timeIndexFileKey);
+                s3Client.deleteObjects(deleteObjectsRequest);
+            } catch (final Exception e1) {
+                log.error("Error cleaning up uploaded files", e1);
+            }
+
+            throw new RemoteStorageException(message, e);
         }
     }
 
@@ -158,7 +165,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         try {
             final S3Object s3Object = s3Client.getObject(bucket, offsetIndexFileKey);
             return s3Object.getObjectContent();
-        } catch (final SdkClientException e) {
+        } catch (final Exception e) {
             throw new RemoteStorageException("Error fetching offset index from " + offsetIndexFileKey, e);
         }
     }
@@ -173,7 +180,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         try {
             final S3Object s3Object = s3Client.getObject(bucket, timeIndexFileKey);
             return s3Object.getObjectContent();
-        } catch (final SdkClientException e) {
+        } catch (final Exception e) {
             throw new RemoteStorageException("Error fetching timestamp index from " + timeIndexFileKey, e);
         }
     }
@@ -191,7 +198,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
             final DeleteObjectsRequest deleteObjectsRequest = new DeleteObjectsRequest(bucket)
                 .withKeys(logFileKey, offsetIndexFileKey, timeIndexFileKey);
             s3Client.deleteObjects(deleteObjectsRequest);
-        } catch (final SdkClientException e) {
+        } catch (final Exception e) {
             throw new RemoteStorageException(String.format("Error deleting %s, %s or %s", logFileKey, offsetIndexFileKey, timeIndexFileKey), e);
         }
     }
