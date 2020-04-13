@@ -16,7 +16,6 @@
  */
 package org.apache.kafka.rsm.s3;
 
-import kafka.log.Log;
 import org.apache.kafka.common.log.remote.storage.LogSegmentData;
 import org.apache.kafka.common.log.remote.storage.RemoteLogSegmentContext;
 import org.apache.kafka.common.log.remote.storage.RemoteLogSegmentId;
@@ -26,6 +25,7 @@ import org.apache.kafka.common.log.remote.storage.RemoteStorageManager;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.NumberFormat;
 import java.util.Map;
 import java.util.Objects;
 
@@ -48,6 +48,10 @@ import org.slf4j.LoggerFactory;
  */
 public class S3RemoteStorageManager implements RemoteStorageManager {
     private static final Logger log = LoggerFactory.getLogger(S3RemoteStorageManager.class);
+
+    private static final String LOG_FILE_SUFFIX = ".log";
+    private static final String INDEX_FILE_SUFFIX = ".index";
+    private static final String TIME_INDEX_FILE_SUFFIX = ".timeindex";
 
     private AwsClientBuilder.EndpointConfiguration endpointConfiguration = null;
 
@@ -91,7 +95,7 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         Objects.requireNonNull(remoteLogSegmentId, "remoteLogSegmentId must not be null");
         Objects.requireNonNull(logSegmentData, "logSegmentData must not be null");
 
-        final long baseOffset = Log.offsetFromFileName(logSegmentData.logSegment().getName());
+        final long baseOffset = offsetFromFileName(logSegmentData.logSegment().getName());
 
         final String logFileKey = logFileKey(remoteLogSegmentId, baseOffset);
         final String offsetIndexFileKey = offsetIndexFileKey(remoteLogSegmentId, baseOffset);
@@ -213,18 +217,18 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
     }
 
     private String logFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
-        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
-                + Log.LogFileSuffix() + "." + remoteLogSegmentId.id();
+        return fileNamePrefix(remoteLogSegmentId) + filenamePrefixFromOffset(fileNameBaseOffset)
+                + LOG_FILE_SUFFIX + "." + remoteLogSegmentId.id();
     }
 
     private String offsetIndexFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
-        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
-                + Log.IndexFileSuffix() + "." + remoteLogSegmentId.id();
+        return fileNamePrefix(remoteLogSegmentId) + filenamePrefixFromOffset(fileNameBaseOffset)
+                + INDEX_FILE_SUFFIX + "." + remoteLogSegmentId.id();
     }
 
     private String timeIndexFileKey(final RemoteLogSegmentId remoteLogSegmentId, final long fileNameBaseOffset) {
-        return fileNamePrefix(remoteLogSegmentId) + Log.filenamePrefixFromOffset(fileNameBaseOffset)
-                + Log.TimeIndexFileSuffix() + "." + remoteLogSegmentId.id();
+        return fileNamePrefix(remoteLogSegmentId) + filenamePrefixFromOffset(fileNameBaseOffset)
+                + TIME_INDEX_FILE_SUFFIX + "." + remoteLogSegmentId.id();
     }
 
     private String fileNamePrefix(final RemoteLogSegmentId remoteLogSegmentId) {
@@ -237,5 +241,25 @@ public class S3RemoteStorageManager implements RemoteStorageManager {
         } catch (final Exception e) {
             throw new RemoteStorageException("Error deserializing S3RemoteLogSegmentContext", e);
         }
+    }
+
+    /**
+     * Parses a log segment file name and extracts the offset from it.
+     * @implNote Taken from kafka.log.Log.offsetFromFileName
+     */
+    private static long offsetFromFileName(final String filename) {
+        return Long.parseLong(filename.substring(0, filename.indexOf('.')));
+    }
+
+    /**
+     * Make the log segment file name from an offset.
+     * @implNote Taken from kafka.log.Log.filenamePrefixFromOffset
+     */
+    static String filenamePrefixFromOffset(final long offset) {
+        final NumberFormat nf = NumberFormat.getInstance();
+        nf.setMinimumIntegerDigits(20);
+        nf.setMaximumFractionDigits(0);
+        nf.setGroupingUsed(false);
+        return nf.format(offset);
     }
 }
