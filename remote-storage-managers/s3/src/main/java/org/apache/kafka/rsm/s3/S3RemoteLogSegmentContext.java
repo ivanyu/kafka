@@ -37,12 +37,15 @@ import org.apache.kafka.common.protocol.types.Type;
  */
 public class S3RemoteLogSegmentContext implements RemoteLogSegmentContext {
 
-    private static final short VERSION = 0;
+    private static final short VERSION_0 = 0;
 
     public static final String VERSION_KEY_NAME = "version";
+    public static final Schema VERSION_SCHEMA = new Schema(
+        new Field(VERSION_KEY_NAME, Type.INT16)
+    );
+
     public static final String BASE_OFFSET_KEY_NAME = "base_offset";
     public static final Schema SCHEMA_V0 = new Schema(
-        new Field(VERSION_KEY_NAME, Type.INT16),
         new Field(BASE_OFFSET_KEY_NAME, Type.INT64)
     );
     private final long baseOffset;
@@ -57,19 +60,30 @@ public class S3RemoteLogSegmentContext implements RemoteLogSegmentContext {
 
     @Override
     public byte[] asBytes() {
-        final Struct struct = new Struct(SCHEMA_V0);
-        struct.set(VERSION_KEY_NAME, VERSION);
-        struct.set(BASE_OFFSET_KEY_NAME, baseOffset);
-        final ByteBuffer buf = ByteBuffer.allocate(SCHEMA_V0.sizeOf(struct));
-        struct.writeTo(buf);
+        final Struct versionStruct = new Struct(VERSION_SCHEMA);
+        versionStruct.set(VERSION_KEY_NAME, VERSION_0);
+
+        final Struct payloadStruct = new Struct(SCHEMA_V0);
+        payloadStruct.set(BASE_OFFSET_KEY_NAME, baseOffset);
+
+        final ByteBuffer buf = ByteBuffer.allocate(
+                VERSION_SCHEMA.sizeOf(versionStruct) + SCHEMA_V0.sizeOf(payloadStruct));
+        versionStruct.writeTo(buf);
+        payloadStruct.writeTo(buf);
         return buf.array();
     }
 
     public static S3RemoteLogSegmentContext fromBytes(final byte[] bytes) {
-        // When there are more schema versions, read conditionally.
-        final Struct struct = SCHEMA_V0.read(ByteBuffer.wrap(bytes));
-        return new S3RemoteLogSegmentContext(
-            struct.getLong(BASE_OFFSET_KEY_NAME)
-        );
+        final ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        final Struct versionStruct = VERSION_SCHEMA.read(buffer);
+        final Short version = versionStruct.getShort(VERSION_KEY_NAME);
+        if (version == VERSION_0) {
+            final Struct struct = SCHEMA_V0.read(buffer);
+            return new S3RemoteLogSegmentContext(
+                    struct.getLong(BASE_OFFSET_KEY_NAME)
+            );
+        } else {
+            throw new IllegalArgumentException("Unknown schema version " + version);
+        }
     }
 }
