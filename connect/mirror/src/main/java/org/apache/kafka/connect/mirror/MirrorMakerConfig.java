@@ -179,6 +179,9 @@ public class MirrorMakerConfig extends AbstractConfig {
 
         props.putAll(originalsStrings());
         props.keySet().retainAll(MirrorConnectorConfig.CONNECTOR_CONFIG_DEF.names());
+
+        // Copy replication policy configuration
+        props.putAll(stringsWithPrefix(MirrorClientConfig.REPLICATION_POLICY_PREFIX));
         
         props.putAll(stringsWithPrefix(CONFIG_PROVIDERS_CONFIG));
         

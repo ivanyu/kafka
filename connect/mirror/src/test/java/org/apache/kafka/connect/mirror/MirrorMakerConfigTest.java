@@ -92,7 +92,7 @@ public class MirrorMakerConfigTest {
         MirrorClientConfig aClientConfig = mirrorConfig.clientConfig("a");
         MirrorClientConfig bClientConfig = mirrorConfig.clientConfig("b");
         assertEquals("replication.policy.separator is picked up in MirrorClientConfig",
-            "__", aClientConfig.getString("replication.policy.separator"));
+            "__", aClientConfig.originalsStrings().get("replication.policy.separator"));
         assertEquals("replication.policy.separator is honored",
             "b__topic1", aClientConfig.replicationPolicy().formatRemoteTopic("b", "topic1"));
         assertEquals("client configs include boostrap.servers",
@@ -126,7 +126,7 @@ public class MirrorMakerConfigTest {
             "tasks.max", "100",
             "topics", "topic-1",
             "groups", "group-2",
-            "replication.policy.separator", "__",
+            "replication.policy.some.property", "x",
             "config.properties.blacklist", "property-3",
             "metric.reporters", "FakeMetricsReporter",
             "topic.filter.class", DefaultTopicFilter.class.getName(),
@@ -147,8 +147,8 @@ public class MirrorMakerConfigTest {
             Arrays.asList("FakeMetricsReporter"), connectorConfig.getList("metric.reporters"));
         assertEquals("Filters should be passed through to underlying Connectors.",
             "DefaultTopicFilter", connectorConfig.getClass("topic.filter.class").getSimpleName());
-        assertEquals("replication policy separator should be passed through to underlying Connectors.",
-            "__", connectorConfig.getString("replication.policy.separator"));
+        assertEquals("replication policy properties should be passed through to underlying Connectors.",
+            "x", connectorConfig.originalsStrings().get("replication.policy.some.property"));
         assertFalse("Unknown properties should not be passed through to Connectors.",
             connectorConfig.originals().containsKey("xxx"));
     }

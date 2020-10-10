@@ -45,14 +45,12 @@ import java.util.HashMap;
  *  </pre>
  */
 public class MirrorClientConfig extends AbstractConfig {
-    public static final String REPLICATION_POLICY_CLASS = "replication.policy.class";
+    public static final String REPLICATION_POLICY_PREFIX = "replication.policy.";
+
+    public static final String REPLICATION_POLICY_CLASS = REPLICATION_POLICY_PREFIX + "class";
     private static final String REPLICATION_POLICY_CLASS_DOC = "Class which defines the remote topic naming convention.";
     public static final Class<?> REPLICATION_POLICY_CLASS_DEFAULT = DefaultReplicationPolicy.class;
-    public static final String REPLICATION_POLICY_SEPARATOR = "replication.policy.separator";
-    private static final String REPLICATION_POLICY_SEPARATOR_DOC = "Separator used in remote topic naming convention.";
-    public static final String REPLICATION_POLICY_SEPARATOR_DEFAULT =
-        DefaultReplicationPolicy.SEPARATOR_DEFAULT;
-    
+
     public static final String ADMIN_CLIENT_PREFIX = "admin.";
     public static final String CONSUMER_CLIENT_PREFIX = "consumer.";
     public static final String PRODUCER_CLIENT_PREFIX = "producer.";
@@ -119,12 +117,6 @@ public class MirrorClientConfig extends AbstractConfig {
             REPLICATION_POLICY_CLASS_DEFAULT,
             ConfigDef.Importance.LOW,
             REPLICATION_POLICY_CLASS_DOC)
-        .define(
-            REPLICATION_POLICY_SEPARATOR,
-            ConfigDef.Type.STRING,
-            REPLICATION_POLICY_SEPARATOR_DEFAULT,
-            ConfigDef.Importance.LOW,
-            REPLICATION_POLICY_SEPARATOR_DOC)
         .define(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG,
                 Type.STRING,
                 CommonClientConfigs.DEFAULT_SECURITY_PROTOCOL,

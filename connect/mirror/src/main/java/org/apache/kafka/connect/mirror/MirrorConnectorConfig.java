@@ -83,10 +83,6 @@ public class MirrorConnectorConfig extends AbstractConfig {
     public static final String REPLICATION_POLICY_CLASS = MirrorClientConfig.REPLICATION_POLICY_CLASS;
     public static final Class<?> REPLICATION_POLICY_CLASS_DEFAULT = MirrorClientConfig.REPLICATION_POLICY_CLASS_DEFAULT;
     private static final String REPLICATION_POLICY_CLASS_DOC = "Class which defines the remote topic naming convention.";
-    public static final String REPLICATION_POLICY_SEPARATOR = MirrorClientConfig.REPLICATION_POLICY_SEPARATOR;
-    private static final String REPLICATION_POLICY_SEPARATOR_DOC = "Separator used in remote topic naming convention.";
-    public static final String REPLICATION_POLICY_SEPARATOR_DEFAULT =
-            MirrorClientConfig.REPLICATION_POLICY_SEPARATOR_DEFAULT;
     public static final String REPLICATION_FACTOR = "replication.factor";
     private static final String REPLICATION_FACTOR_DOC = "Replication factor for newly created remote topics.";
     public static final int REPLICATION_FACTOR_DEFAULT = 2;
@@ -590,12 +586,6 @@ public class MirrorConnectorConfig extends AbstractConfig {
                     REPLICATION_POLICY_CLASS_DEFAULT,
                     ConfigDef.Importance.LOW,
                     REPLICATION_POLICY_CLASS_DOC)
-            .define(
-                    REPLICATION_POLICY_SEPARATOR,
-                    ConfigDef.Type.STRING,
-                    REPLICATION_POLICY_SEPARATOR_DEFAULT,
-                    ConfigDef.Importance.LOW,
-                    REPLICATION_POLICY_SEPARATOR_DOC)
             .define(
                     REPLICATION_FACTOR,
                     ConfigDef.Type.INT,
